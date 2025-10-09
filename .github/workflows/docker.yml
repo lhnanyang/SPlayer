@@ -52,5 +52,5 @@ jobs:
             linux/amd64
             linux/arm64
           push: true
-          tags: splayer:$(date +%s)
-          labels: splayer:$(date +%s)
+          tags: splayer:dev
+          labels: splayer:dev
