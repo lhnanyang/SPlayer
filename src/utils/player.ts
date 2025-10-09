@@ -3,8 +3,8 @@ import type { MessageReactive } from "naive-ui";
 import { Howl, Howler } from "howler";
 import { cloneDeep } from "lodash-es";
 import { useMusicStore, useStatusStore, useDataStore, useSettingStore } from "@/stores";
-import { parsedLyricsData, resetSongLyric, parseLocalLyric } from "./lyric";
-import { songUrl, unlockSongUrl, songLyric, songChorus } from "@/api/song";
+import { parsedLyricsData, resetSongLyric, parseLocalLyric, parseTTMLToAMLL } from "./lyric";
+import { songUrl, unlockSongUrl, songLyric, songChorus, songLyricTTML } from "@/api/song";
 import { getCoverColorData } from "@/utils/color";
 import { calculateProgress } from "./time";
 import { isElectron, isDev } from "./helper";
@@ -162,8 +162,9 @@ class Player {
       } else return null;
     }
     // 返回歌曲地址
-    // 客户端直接返回，网页端转 https
-    const url = isElectron ? songData.url : songData.url.replace(/^http:/, "https:");
+    // 客户端直接返回，网页端转 https, 并转换url以便解决音乐链接cors问题
+    const url = isElectron ? songData.url : songData.url.replace(/^http:/, "https:").replace(/m804\.music\.126\.net/g, 'm801.music.126.net').replace(/m704\.music\.126\.net/g, 'm701.music.126.net');
+    console.log(`🎧 ${id} music url:`, url);
     return url;
   }
   /**
@@ -420,8 +421,32 @@ class Player {
       resetSongLyric();
       return;
     }
-    const lyricRes = await songLyric(id);
-    parsedLyricsData(lyricRes);
+
+    try {
+      const musicStore = useMusicStore();
+      const settingStore = useSettingStore();
+      const [lyricRes, ttmlContent] = await Promise.all([
+        songLyric(id),
+        songLyricTTML(id)
+      ]);
+      parsedLyricsData(lyricRes);
+      if (ttmlContent && settingStore.enableTTMLLyric) {
+        const ttmlLyric = parseTTMLToAMLL(ttmlContent);
+        if (ttmlLyric?.length > 0) {
+          settingStore.showYrc = true;
+          musicStore.songLyric = {
+            ...musicStore.songLyric,
+            yrcAMData: ttmlLyric,
+          };
+          console.log("✅ TTML lyrics enabled");
+          return;
+        }
+      }
+
+    } catch (error) {
+      console.error("❌ Error loading lyrics:", error);
+      resetSongLyric();
+    }
   }
   /**
    * 获取副歌时间
@@ -549,7 +574,7 @@ class Player {
       statusStore.playLoading = true;
       // 本地歌曲
       if (path) {
-        await this.createPlayer(path, autoPlay, seek);
+        await this.createPlayer(`file://${path}`, autoPlay, seek);
         // 获取歌曲元信息
         await this.parseLocalMusicInfo(path);
       }
