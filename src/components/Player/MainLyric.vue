@@ -26,13 +26,12 @@
         @after-enter="lyricsScroll(statusStore.lyricIndex)"
         @after-leave="lyricsScroll(statusStore.lyricIndex)"
       >
-        <n-scrollbar ref="lyricScroll" class="lyric-scroll">
+        <n-scrollbar ref="lyricScroll" class="lyric-scroll" tabindex="-1">
           <!-- 逐字歌词 -->
           <template v-if="settingStore.showYrc && musicStore.isHasYrc">
             <div id="lrc-placeholder" class="placeholder">
               <!-- 倒计时 -->
               <CountDown
-                v-if="settingStore.countDownShow"
                 :start="0"
                 :duration="musicStore.songLyric.yrcData[0].time || 0"
                 :seek="playSeek"
@@ -94,10 +93,11 @@
               <span v-if="item.roma && settingStore.showRoma" class="roma" lang="en">
                 {{ item.roma }}
               </span>
-              <!-- 倒计时 -->
+              <!-- 间奏倒计时 -->
               <div
                 v-if="
                   settingStore.countDownShow &&
+                  item.time > 0 &&
                   musicStore.songLyric.yrcData[index + 1]?.time - item.endTime >= 10
                 "
                 class="count-down-content"
@@ -117,7 +117,6 @@
             <div id="lrc-placeholder" class="placeholder">
               <!-- 倒计时 -->
               <CountDown
-                v-if="settingStore.countDownShow"
                 :start="0"
                 :duration="musicStore.songLyric.lrcData[0].time || 0"
                 :seek="playSeek"
@@ -175,9 +174,10 @@ const lyricScroll = ref<InstanceType<typeof NScrollbar> | null>(null);
 // 实时播放进度
 const playSeek = ref<number>(player.getSeek());
 
-// 实时更新播放进度
+// 实时更新播放进度（按歌曲 id 应用偏移）
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
-  playSeek.value = player.getSeek() + statusStore.currentTimeOffset;
+  const songId = musicStore.playSong?.id as number | undefined;
+  playSeek.value = player.getSeek() + statusStore.getSongOffset(songId);
 });
 
 // 鼠标移出歌词区域
@@ -335,7 +335,6 @@ onBeforeUnmount(() => {
       transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
     cursor: pointer;
     width: 100%;
-    box-sizing: border-box; /* 新增：确保 padding 不影响宽度 */
     .content {
       display: block;
       font-size: var(--lrc-size);
@@ -448,8 +447,8 @@ onBeforeUnmount(() => {
       }
       &.is-bg {
         opacity: 0.4;
-        transform: scale(0.5);
-        padding: 0px 32px;
+        transform: scale(0.7);
+        padding: 0px 20px;
       }
       &.is-duet {
         transform-origin: right;
@@ -477,7 +476,7 @@ onBeforeUnmount(() => {
         opacity: 0.6;
       }
       &.is-bg {
-        opacity: 0.6 !important;
+        opacity: 0.85 !important;
       }
     }
     &::before {

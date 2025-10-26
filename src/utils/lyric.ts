@@ -1,27 +1,51 @@
-import { LyricLine, parseLrc, parseYrc, TTMLLyric } from "@applemusic-like-lyrics/lyric";
+import { LyricLine, parseLrc, parseTTML, parseYrc, TTMLLyric } from "@applemusic-like-lyrics/lyric";
 import type { LyricType } from "@/types/main";
-import { useMusicStore, useSettingStore } from "@/stores";
+import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
+import { SettingState } from "@/stores/setting";
 import { msToS } from "./time";
 
-// 歌词排除内容
-const getExcludeKeywords = () => {
+// 歌词排除关键词
+const getExcludeKeywords = (settings: SettingState = useSettingStore()): string[] => {
+  if (!settings.enableExcludeLyrics) return [];
+  return settings.excludeKeywords;
+};
+
+// 歌词排除正则
+const getExcludeRegexes = (settings: SettingState = useSettingStore()): RegExp[] => {
+  if (!settings.enableExcludeLyrics) return [];
+  return settings.excludeRegexes.map((regex) => new RegExp(regex));
+};
+
+// 是否排除歌词行
+const isLyricExcluded = (line: string) => {
   const settingStore = useSettingStore();
-  return settingStore.excludeKeywords;
+
+  if (!settingStore.enableExcludeLyrics) {
+    return false;
+  }
+  const excludeKeywords = getExcludeKeywords(settingStore);
+  const excludeRegexes = getExcludeRegexes(settingStore);
+  return (
+    excludeKeywords.some((keyword) => line.includes(keyword)) ||
+    excludeRegexes.some((regex) => regex.test(line))
+  );
 };
 
 // 恢复默认
 export const resetSongLyric = () => {
   const musicStore = useMusicStore();
+  const statusStore = useStatusStore();
   musicStore.songLyric = {
     lrcData: [],
     lrcAMData: [],
     yrcData: [],
     yrcAMData: [],
   };
+  statusStore.usingTTMLLyric = false;
 };
 
 // 解析歌词数据
-export const parsedLyricsData = (lyricData: any) => {
+export const parsedLyricsData = (lyricData: any, skipExclude: boolean = false) => {
   const musicStore = useMusicStore();
   if (lyricData.code !== 200) {
     resetSongLyric();
@@ -39,7 +63,7 @@ export const parsedLyricsData = (lyricData: any) => {
   // 普通歌词
   if (lyricData?.lrc?.lyric) {
     lrcParseData = parseLrc(lyricData.lrc.lyric);
-    lrcData = parseLrcData(lrcParseData);
+    lrcData = parseLrcData(lrcParseData, skipExclude);
     // 其他翻译
     if (lyricData?.tlyric?.lyric) {
       tlyricParseData = parseLrc(lyricData.tlyric.lyric);
@@ -53,7 +77,7 @@ export const parsedLyricsData = (lyricData: any) => {
   // 逐字歌词
   if (lyricData?.yrc?.lyric) {
     yrcParseData = parseYrc(lyricData.yrc.lyric);
-    yrcData = parseYrcData(yrcParseData);
+    yrcData = parseYrcData(yrcParseData, skipExclude);
     // 其他翻译
     if (lyricData?.ytlrc?.lyric) {
       ytlrcParseData = parseLrc(lyricData.ytlrc.lyric);
@@ -67,13 +91,13 @@ export const parsedLyricsData = (lyricData: any) => {
   musicStore.songLyric = {
     lrcData,
     yrcData,
-    lrcAMData: parseAMData(lrcParseData, tlyricParseData, romalrcParseData),
-    yrcAMData: parseAMData(yrcParseData, ytlrcParseData, yromalrcParseData),
+    lrcAMData: parseAMData(lrcParseData, tlyricParseData, romalrcParseData, skipExclude),
+    yrcAMData: parseAMData(yrcParseData, ytlrcParseData, yromalrcParseData, skipExclude),
   };
 };
 
 // 解析普通歌词
-export const parseLrcData = (lrcData: LyricLine[]): LyricType[] => {
+export const parseLrcData = (lrcData: LyricLine[], skipExclude: boolean = false): LyricType[] => {
   if (!lrcData) return [];
   // 数据处理
   const lrcList = lrcData
@@ -82,7 +106,7 @@ export const parseLrcData = (lrcData: LyricLine[]): LyricType[] => {
       const time = msToS(words[0].startTime);
       const content = words[0].word.trim();
       // 排除内容
-      if (!content || getExcludeKeywords().some((keyword) => content.includes(keyword))) {
+      if (!content || (!skipExclude && isLyricExcluded(content))) {
         return null;
       }
       return {
@@ -96,7 +120,7 @@ export const parseLrcData = (lrcData: LyricLine[]): LyricType[] => {
 };
 
 // 解析逐字歌词
-export const parseYrcData = (yrcData: LyricLine[]): LyricType[] => {
+export const parseYrcData = (yrcData: LyricLine[], skipExclude: boolean = false): LyricType[] => {
   if (!yrcData) return [];
   // 数据处理
   const yrcList = yrcData
@@ -118,7 +142,7 @@ export const parseYrcData = (yrcData: LyricLine[]): LyricType[] => {
         .map((word) => word.content + (word.endsWithSpace ? " " : ""))
         .join("");
       // 排除内容
-      if (!contentStr || getExcludeKeywords().some((keyword) => contentStr.includes(keyword))) {
+      if (!contentStr || (!skipExclude && isLyricExcluded(contentStr))) {
         return null;
       }
       return {
@@ -169,15 +193,35 @@ export const alignAMLyrics = (
 };
 
 // 处理本地歌词
-export const parseLocalLyric = (lyric: string) => {
+export const parseLocalLyric = (lyric: string, format: "lrc" | "ttml") => {
+  const statusStore = useStatusStore();
+
   if (!lyric) {
     resetSongLyric();
     return;
   }
+  switch (format) {
+    case "lrc":
+      parseLocalLyricLrc(lyric);
+      statusStore.usingTTMLLyric = false;
+      break;
+    case "ttml":
+      parseLocalLyricAM(lyric);
+      statusStore.usingTTMLLyric = true;
+      break;
+  }
+};
+
+/**
+ * 解析本地LRC歌词
+ * @param lyric LRC格式的歌词内容
+ */
+const parseLocalLyricLrc = (lyric: string) => {
   const musicStore = useMusicStore();
+  const settingStore = useSettingStore();
   // 解析
   const lrc: LyricLine[] = parseLrc(lyric);
-  const lrcData: LyricType[] = parseLrcData(lrc);
+  const lrcData: LyricType[] = parseLrcData(lrc, !settingStore.enableExcludeLocalLyrics);
   // 处理结果
   const lrcDataParsed: LyricType[] = [];
   // 翻译提取
@@ -209,20 +253,56 @@ export const parseLocalLyric = (lyric: string) => {
   };
 };
 
+/**
+ * 解析本地AM歌词
+ * @param lyric AM格式的歌词内容
+ */
+const parseLocalLyricAM = (lyric: string) => {
+  const musicStore = useMusicStore();
+  const settingStore = useSettingStore();
+
+  const skipExcludeLocal = !settingStore.enableExcludeLocalLyrics;
+  const skipExcludeTTML = !settingStore.enableTTMLLyric;
+  const skipExclude = skipExcludeLocal || skipExcludeTTML;
+
+  const ttml = parseTTML(lyric);
+  const yrcAMData = parseTTMLToAMLL(ttml, skipExclude);
+  const yrcData = parseTTMLToYrc(ttml, skipExclude);
+  musicStore.songLyric = {
+    lrcData: yrcData,
+    lrcAMData: yrcAMData,
+    yrcAMData,
+    yrcData,
+  };
+};
+
 // 处理 AM 歌词
-const parseAMData = (lrcData: LyricLine[], tranData?: LyricLine[], romaData?: LyricLine[]) => {
-  let lyricData = lrcData.map((line, index, lines) => ({
-    words: line.words,
-    startTime: line.words[0]?.startTime ?? 0,
-    endTime:
-      lines[index + 1]?.words?.[0]?.startTime ??
-      line.words?.[line.words.length - 1]?.endTime ??
-      Infinity,
-    translatedLyric: "",
-    romanLyric: "",
-    isBG: line.isBG ?? false,
-    isDuet: line.isDuet ?? false,
-  }));
+const parseAMData = (lrcData: LyricLine[], tranData?: LyricLine[], romaData?: LyricLine[], skipExclude: boolean = false) => {
+  let lyricData = lrcData
+    .map((line, index, lines) => {
+      // 获取歌词文本内容
+      const content = line.words
+        .map((word) => word.word)
+        .join("")
+        .trim();
+      // 排除包含关键词的内容
+      if (!content || (!skipExclude && isLyricExcluded(content))) {
+        return null;
+      }
+      return {
+        words: line.words,
+        startTime: line.words[0]?.startTime ?? 0,
+        endTime:
+          lines[index + 1]?.words?.[0]?.startTime ??
+          line.words?.[line.words.length - 1]?.endTime ??
+          Infinity,
+        translatedLyric: "",
+        romanLyric: "",
+        isBG: line.isBG ?? false,
+        isDuet: line.isDuet ?? false,
+      };
+    })
+    .filter((line): line is NonNullable<typeof line> => line !== null);
   if (tranData) {
     lyricData = alignAMLyrics(lyricData, tranData, "translatedLyric");
   }
@@ -235,24 +315,35 @@ const parseAMData = (lrcData: LyricLine[], tranData?: LyricLine[], romaData?: Ly
 /**
  * 从TTML格式解析歌词并转换为AMLL格式
  * @param ttmlContent TTML格式的歌词内容
+ * @param skipExclude 是否跳过排除
  * @returns AMLL格式的歌词行数组
  */
-export const parseTTMLToAMLL = (ttmlContent: TTMLLyric): LyricLine[] => {
+export const parseTTMLToAMLL = (ttmlContent: TTMLLyric, skipExclude: boolean = false): LyricLine[] => {
   if (!ttmlContent) return [];
 
   try {
     const validLines = ttmlContent.lines
-      .filter((line): line is any => line && typeof line === "object" && Array.isArray(line.words))
+      .filter((line) => line && typeof line === "object" && Array.isArray(line.words))
       .map((line) => {
         const words = line.words
-          .filter((word: any) => word && typeof word === "object")
-          .map((word: any) => ({
+          .filter((word) => word && typeof word === "object")
+          .map((word) => ({
             word: String(word.word || " "),
             startTime: Number(word.startTime) || 0,
             endTime: Number(word.endTime) || 0,
           }));
 
         if (!words.length) return null;
+
+        // 获取歌词文本内容
+        const content = words
+          .map((word) => word.word)
+          .join("")
+          .trim();
+        // 排除包含关键词的内容
+        if (!content || (!skipExclude && isLyricExcluded(content))) {
+          return null;
+        }
 
         const startTime = words[0].startTime;
         const endTime = words[words.length - 1].endTime;
@@ -279,9 +370,10 @@ export const parseTTMLToAMLL = (ttmlContent: TTMLLyric): LyricLine[] => {
 /**
  * 从TTML格式解析歌词并转换为默认Yrc格式
  * @param ttmlContent TTML格式的歌词内容
+ * @param skipExclude 是否跳过排除
  * @returns 默认Yrc格式的歌词行数组
  */
-export const parseTTMLToYrc = (ttmlContent: TTMLLyric): LyricType[] => {
+export const parseTTMLToYrc = (ttmlContent: TTMLLyric, skipExclude: boolean = false): LyricType[] => {
   if (!ttmlContent) return [];
 
   try {
@@ -305,7 +397,7 @@ export const parseTTMLToYrc = (ttmlContent: TTMLLyric): LyricType[] => {
           .map((word) => word.content + (word.endsWithSpace ? " " : ""))
           .join("");
         // 排除内容
-        if (!contentStr || getExcludeKeywords().some((keyword) => contentStr.includes(keyword))) {
+        if (!contentStr || (!skipExclude && isLyricExcluded(contentStr))) {
           return null;
         }
         return {
@@ -335,4 +427,68 @@ export const getLyricLanguage = (lyric: string): string => {
   if (/[\u4e00-\u9fa5]/.test(lyric)) return "zh-CN";
   // 默认英语
   return "en";
+};
+
+/**
+ * 计算歌词索引
+ * - 普通歌词(LRC)：沿用当前按开始时间定位的算法
+ * - 逐字歌词(YRC)：当播放时间位于某句 [time, endTime) 区间内时，索引为该句；
+ *   若下一句开始时间落在上一句区间（对唱重叠），仍保持上一句索引，直到上一句结束。
+ */
+export const calculateLyricIndex = (
+  currentTime: number,
+): { index: number; lyrics: LyricType[] } => {
+  const musicStore = useMusicStore();
+  const statusStore = useStatusStore();
+  const settingStore = useSettingStore();
+  // 应用实时偏移（按歌曲 id 记忆） + 0.3s（解决对唱时歌词延迟问题）
+  const songId = musicStore.playSong?.id as number | undefined;
+  const playSeek = currentTime + statusStore.getSongOffset(songId) + 0.3;
+  // 选择歌词类型
+  const useYrc = !!(settingStore.showYrc && musicStore.songLyric.yrcData.length);
+  const lyrics = useYrc ? musicStore.songLyric.yrcData : musicStore.songLyric.lrcData;
+  // 无歌词时
+  if (!lyrics || !lyrics.length) return { index: -1, lyrics: [] };
+
+  // 普通歌词：保持原有计算方式
+  if (!useYrc) {
+    const idx = lyrics.findIndex((v) => (v?.time ?? 0) >= playSeek);
+    const index = idx === -1 ? lyrics.length - 1 : idx - 1;
+    return { index, lyrics };
+  }
+
+  // 逐字歌词（并发最多三句同时存在）：
+  // - 计算在播放进度下处于激活区间的句子集合 activeIndices（[time, endTime)）
+  // - 若激活数 >= 3，仅保留最后三句作为并发显示（允许三句同时有效）；否则保持最后两句
+  // - 索引取该并发集合中较早的一句（保持“上一句”高亮）
+  // - 若无激活句：首句之前返回 -1；否则回退到最近一句
+
+  const firstStart = lyrics[0]?.time ?? 0;
+  if (playSeek < firstStart) {
+    return { index: -1, lyrics };
+  }
+
+  const activeIndices: number[] = [];
+  for (let i = 0; i < lyrics.length; i++) {
+    const start = lyrics[i]?.time ?? 0;
+    const end = lyrics[i]?.endTime ?? Infinity;
+    if (playSeek >= start && playSeek < end) {
+      activeIndices.push(i);
+    }
+  }
+
+  if (activeIndices.length === 0) {
+    // 不在任何句子的区间里：退回到最近一句（按开始时间）
+    const nextIdx = lyrics.findIndex((v) => (v?.time ?? 0) > playSeek);
+    const index = nextIdx === -1 ? lyrics.length - 1 : nextIdx - 1;
+    return { index, lyrics };
+  }
+
+  if (activeIndices.length === 1) {
+    return { index: activeIndices[0], lyrics };
+  }
+
+  // 激活句 >= 2：如果达到三句或更多，限制为最后三句并发；否则保持最后两句
+  const concurrent = activeIndices.length >= 3 ? activeIndices.slice(-3) : activeIndices.slice(-2);
+  return { index: concurrent[0], lyrics };
 };
