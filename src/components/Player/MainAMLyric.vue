@@ -1,7 +1,7 @@
 <template>
-  <Transition>
+  <Transition name="fade" mode="out-in">
     <div
-      :key="amLyricsData?.[0]?.startTime"
+      :key="amLyricsData?.[0]?.words?.length"
       :class="['lyric-am', { pure: statusStore.pureLyricMode }]"
     >
       <LyricPlayer
@@ -61,27 +61,6 @@ const mainColor = computed(() => {
   return `rgb(${statusStore.mainColor})`;
 });
 
-// 检查是否为纯音乐歌词
-const isPureInstrumental = (lyrics: LyricLine[]): boolean => {
-  if (!lyrics || lyrics.length === 0) return false;
-  const instrumentalKeywords = ["纯音乐", "instrumental", "请欣赏"];
-
-  if (lyrics.length === 1) {
-    const content = lyrics[0].words?.[0]?.word || "";
-    return instrumentalKeywords.some((keyword) =>
-      content.toLowerCase().includes(keyword.toLowerCase()),
-    );
-  }
-
-  if (lyrics.length <= 3) {
-    const allContent = lyrics.map((line) => line.words?.[0]?.word || "").join("");
-    return instrumentalKeywords.some((keyword) =>
-      allContent.toLowerCase().includes(keyword.toLowerCase()),
-    );
-  }
-  return false;
-};
-
 // 当前歌词
 const amLyricsData = computed<LyricLine[]>(() => {
   const { songLyric } = musicStore;
@@ -93,9 +72,6 @@ const amLyricsData = computed<LyricLine[]>(() => {
 
   // 简单检查歌词有效性
   if (!Array.isArray(lyrics) || lyrics.length === 0) return [];
-
-  // 检查是否为纯音乐
-  if (isPureInstrumental(lyrics)) return [];
 
   return lyrics;
 });
@@ -109,8 +85,11 @@ const jumpSeek = (line: any) => {
 };
 
 // 处理歌词语言
-const processLyricLanguage = () => {
-  const lyricLinesEl = lyricPlayerRef.value?.lyricPlayer?.lyricLinesEl ?? [];
+const processLyricLanguage = (player = lyricPlayerRef.value) => {
+  const lyricLinesEl = player?.lyricPlayer?.lyricLinesEl;
+  if (!lyricLinesEl || lyricLinesEl.length === 0) {
+    return;
+  }
   // 遍历歌词行
   for (let e of lyricLinesEl) {
     // 获取歌词行内容 (合并逐字歌词为一句)
@@ -123,15 +102,16 @@ const processLyricLanguage = () => {
 };
 
 // 切换歌曲时处理歌词语言
-watch(amLyricsData, () => {
-  nextTick(() => processLyricLanguage());
+watch(amLyricsData, (data) => {
+  if (data) nextTick(() => processLyricLanguage());
+});
+watch(lyricPlayerRef, (player) => {
+  if (player) nextTick(() => processLyricLanguage(player));
 });
 
 onMounted(() => {
   // 恢复进度
   resumeSeek();
-  // 处理歌词语言
-  nextTick(() => processLyricLanguage());
 });
 
 onBeforeUnmount(() => {

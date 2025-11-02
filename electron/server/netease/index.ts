@@ -29,7 +29,7 @@ const getHandler = (name: string, neteaseApi: (params: any) => any) => {
 };
 
 // 初始化 NcmAPI
-const initNcmAPI = async (fastify: FastifyInstance) => {
+export const initNcmAPI = async (fastify: FastifyInstance) => {
   // 主信息
   fastify.get("/netease", (_, reply) => {
     reply.send({
@@ -60,7 +60,28 @@ const initNcmAPI = async (fastify: FastifyInstance) => {
     }
   });
 
+  // 获取 TTML 歌词
+  fastify.get(
+    "/netease/lyric/ttml",
+    async (req: FastifyRequest<{ Querystring: { id: string } }>, reply: FastifyReply) => {
+      const { id } = req.query;
+      if (!id) {
+        return reply.status(400).send({ error: "id is required" });
+      }
+      const url = `https://amll-ttml-db.stevexmh.net/ncm/${id}`;
+      try {
+        const response = await fetch(url);
+        if (response.status !== 200) {
+          return reply.send(null);
+        }
+        const data = await response.text();
+        return reply.send(data);
+      } catch (error) {
+        serverLog.error("❌ TTML Lyric Fetch Error:", error);
+        return reply.send(null);
+      }
+    },
+  );
+
   serverLog.info("🌐 Register NcmAPI successfully");
 };
-
-export default initNcmAPI;
