@@ -52,8 +52,9 @@
 <script setup lang="ts">
 import type { MenuOption, NScrollbar } from "naive-ui";
 import type { SettingType } from "@/types/main";
-import { isElectron, renderIcon } from "@/utils/helper";
+import { renderIcon } from "@/utils/helper";
 import packageJson from "@/../package.json";
+import { isElectron } from "@/utils/env";
 
 const props = defineProps<{ type: SettingType }>();
 
@@ -193,6 +194,12 @@ const toGithub = () => {
       &:last-child {
         margin-bottom: 0;
       }
+    }
+    .n-h {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
     }
     .n-collapse-transition {
       margin-bottom: 12px;

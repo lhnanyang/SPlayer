@@ -26,7 +26,8 @@
         @after-enter="lyricsScroll(statusStore.lyricIndex)"
         @after-leave="lyricsScroll(statusStore.lyricIndex)"
       >
-        <n-scrollbar ref="lyricScroll" class="lyric-scroll" tabindex="-1">
+        <div v-if="statusStore.lyricLoading" class="lyric-loading">歌词正在加载中...</div>
+        <n-scrollbar v-else ref="lyricScroll" class="lyric-scroll" tabindex="-1">
           <!-- 逐字歌词 -->
           <template v-if="settingStore.showYrc && musicStore.isHasYrc">
             <div id="lrc-placeholder" class="placeholder">
@@ -57,7 +58,10 @@
               ]"
               :style="{
                 filter: settingStore.lyricsBlur
-                  ? `blur(${Math.min(Math.abs(statusStore.lyricIndex - index) * 1.8, 10)}px)`
+                  ? (playSeek >= item.time && playSeek < item.endTime) ||
+                    statusStore.lyricIndex === index
+                    ? 'blur(0)'
+                    : `blur(${Math.min(Math.abs(statusStore.lyricIndex - index) * 1.8, 10)}px)`
                   : 'blur(0)',
               }"
               @click="jumpSeek(item.time)"
@@ -165,6 +169,7 @@ import { NScrollbar } from "naive-ui";
 import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import player from "@/utils/player";
 import { getLyricLanguage } from "@/utils/lyric";
+import { isElectron } from "@/utils/env";
 import LyricMenu from "./LyricMenu.vue";
 
 const musicStore = useMusicStore();
@@ -271,7 +276,8 @@ const getYrcStyle = (wordData: LyricContentType, lyricIndex: number) => {
 const jumpSeek = (time: number) => {
   if (!time) return;
   lrcMouseStatus.value = false;
-  player.setSeek(time);
+  const offsetSeconds = statusStore.getSongOffset(musicStore.playSong?.id);
+  player.setSeek(time - offsetSeconds);
   player.play();
 };
 
@@ -287,6 +293,9 @@ onMounted(() => {
   nextTick().then(() => {
     lyricsScroll(statusStore.lyricIndex);
   });
+  if (isElectron) {
+    window.electron.ipcRenderer.on("lyricsScroll", () => lyricsScroll(statusStore.lyricIndex));
+  }
 });
 
 onBeforeUnmount(() => {
@@ -382,6 +391,8 @@ onBeforeUnmount(() => {
           top: 0;
           transform: none;
           will-change: -webkit-mask-position-x, transform, opacity;
+          // padding: 2px 8px;
+          // margin: -2px -8px;
           mask-image: linear-gradient(
             to right,
             rgb(0, 0, 0) 45.4545454545%,
@@ -398,7 +409,7 @@ onBeforeUnmount(() => {
           -webkit-mask-repeat: no-repeat;
           transition:
             opacity 0.3s,
-            filter 0.5s,
+            filter 0.3s,
             margin 0.3s,
             padding 0.3s !important;
         }
@@ -595,5 +606,16 @@ onBeforeUnmount(() => {
       filter: blur(0) !important;
     }
   }
+}
+</style>
+
+<style scoped>
+.lyric-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
 }
 </style>

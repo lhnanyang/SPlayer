@@ -1,4 +1,4 @@
-import { isElectron } from "@/utils/helper";
+import { isElectron } from "@/utils/env";
 import { songLevelData } from "@/utils/meta";
 import request from "@/utils/request";
 
@@ -47,7 +47,11 @@ export const songUrl = (
 };
 
 // 获取解锁歌曲 URL
-export const unlockSongUrl = (id: number, keyword: string, server: "netease" | "kuwo") => {
+export const unlockSongUrl = (
+  id: number,
+  keyword: string,
+  server: "netease" | "kuwo" | "bodian",
+) => {
   const params = server === "netease" ? { id } : { keyword };
   return request({
     baseURL: "/api/unblock",
@@ -73,7 +77,7 @@ export const songLyric = (id: number) => {
  */
 export const songLyricTTML = async (id: number) => {
   if (isElectron) {
-    return request({ url: "/lyric/ttml", params: { id } });
+    return request({ url: "/lyric/ttml", params: { id, noCookie: true } });
   } else {
     const url = `https://amll-ttml-db.stevexmh.net/ncm/${id}`;
     try {

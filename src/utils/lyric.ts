@@ -41,13 +41,11 @@ const isLyricExcluded = (line: string): boolean => {
 export const resetSongLyric = () => {
   const musicStore = useMusicStore();
   const statusStore = useStatusStore();
-  musicStore.songLyric = {
-    lrcData: [],
-    lrcAMData: [],
-    yrcData: [],
-    yrcAMData: [],
-  };
+  // 重置歌词数据
+  musicStore.setSongLyric({}, true);
   statusStore.usingTTMLLyric = false;
+  // 标记为加载中（切歌时防止显示上一首歌词）
+  statusStore.lyricLoading = true;
   // 重置歌词索引
   statusStore.lyricIndex = -1;
 };
@@ -102,14 +100,19 @@ export const parsedLyricsData = (lyricData: any, skipExclude: boolean = false): 
       yrcData = alignLyrics(yrcData, parseLrcData(yromalrcParseData), "roma");
     }
   }
-  musicStore.songLyric = {
-    lrcData,
-    yrcData,
-    lrcAMData: parseAMData(lrcParseData, tlyricParseData, romalrcParseData, skipExclude),
-    yrcAMData: parseAMData(yrcParseData, ytlrcParseData, yromalrcParseData, skipExclude),
-  };
+  musicStore.setSongLyric(
+    {
+      lrcData,
+      yrcData,
+      lrcAMData: parseAMData(lrcParseData, tlyricParseData, romalrcParseData, skipExclude),
+      yrcAMData: parseAMData(yrcParseData, ytlrcParseData, yromalrcParseData, skipExclude),
+    },
+    true,
+  );
   // 重置歌词索引
   statusStore.lyricIndex = -1;
+  // 歌词已加载完成
+  statusStore.lyricLoading = false;
 };
 
 /**
@@ -273,31 +276,43 @@ const parseLocalLyricLrc = (lyric: string) => {
   for (let i = 0; i < lrcData.length; i++) {
     // 当前歌词
     const lrcItem = lrcData[i];
-    // 是否具有翻译
+    // 是否具有翻译或音译
+    // 根据已解析歌词中是否有时间相同来判断，因此最先遍历的歌词行会被作为主歌词
     const existingObj = lrcDataParsed.find((v) => v.time === lrcItem.time);
+    // 若具有翻译或音译，则判断主歌词中是否有翻译，若没有则将此句作为翻译，音译同理
+    // 如果出现时间相同的歌词行，第一行会被作为主歌词，第二行翻译，第三行音译，其余舍去
     if (existingObj) {
-      existingObj.tran = lrcItem.content;
+      if (!existingObj.tran) {
+        existingObj.tran = lrcItem.content;
+      } else if (!existingObj.roma) {
+        existingObj.roma = lrcItem.content;
+      }
     } else {
       lrcDataParsed.push(lrcItem);
     }
   }
   // 更新歌词
-  musicStore.songLyric = {
-    lrcData: lrcDataParsed,
-    lrcAMData: lrcDataParsed.map((line, index, lines) => ({
-      words: [{ startTime: line.time, endTime: 0, word: line.content }],
-      startTime: line.time * 1000,
-      endTime: lines[index + 1]?.time * 1000,
-      translatedLyric: line.tran ?? "",
-      romanLyric: line.roma ?? "",
-      isBG: false,
-      isDuet: false,
-    })),
-    yrcData: [],
-    yrcAMData: [],
-  };
+  musicStore.setSongLyric(
+    {
+      lrcData: lrcDataParsed,
+      lrcAMData: lrcDataParsed.map((line, index, lines) => ({
+        words: [{ startTime: line.time, endTime: 0, word: line.content }],
+        startTime: line.time * 1000,
+        endTime: lines[index + 1]?.time * 1000,
+        translatedLyric: line.tran ?? "",
+        romanLyric: line.roma ?? "",
+        isBG: false,
+        isDuet: false,
+      })),
+      yrcData: [],
+      yrcAMData: [],
+    },
+    true,
+  );
   // 重置歌词索引
   statusStore.lyricIndex = -1;
+  // 歌词已加载完成
+  statusStore.lyricLoading = false;
 };
 
 /**
@@ -316,14 +331,19 @@ const parseLocalLyricAM = (lyric: string) => {
   const ttml = parseTTML(lyric);
   const yrcAMData = parseTTMLToAMLL(ttml, skipExclude);
   const yrcData = parseTTMLToYrc(ttml, skipExclude);
-  musicStore.songLyric = {
-    lrcData: yrcData,
-    lrcAMData: yrcAMData,
-    yrcAMData,
-    yrcData,
-  };
+  musicStore.setSongLyric(
+    {
+      lrcData: yrcData,
+      lrcAMData: yrcAMData,
+      yrcAMData,
+      yrcData,
+    },
+    true,
+  );
   // 重置歌词索引
   statusStore.lyricIndex = -1;
+  // 歌词已加载完成
+  statusStore.lyricLoading = false;
 };
 
 /**
@@ -410,8 +430,8 @@ export const parseTTMLToAMLL = (
           return null;
         }
 
-        const startTime = words[0].startTime;
-        const endTime = words[words.length - 1].endTime;
+        const startTime = line.startTime || words[0].startTime;
+        const endTime = line.endTime || words[words.length - 1].endTime;
 
         return {
           words,
@@ -503,9 +523,7 @@ export const getLyricLanguage = (lyric: string): string => {
  * - 逐字歌词(YRC)：当播放时间位于某句 [time, endTime) 区间内时，索引为该句；
  *   若下一句开始时间落在上一句区间（对唱重叠），仍保持上一句索引，直到上一句结束。
  */
-export const calculateLyricIndex = (
-  currentTime: number,
-): { index: number; lyrics: LyricType[] } => {
+export const calculateLyricIndex = (currentTime: number): number => {
   const musicStore = useMusicStore();
   const statusStore = useStatusStore();
   const settingStore = useSettingStore();
@@ -516,13 +534,13 @@ export const calculateLyricIndex = (
   const useYrc = !!(settingStore.showYrc && musicStore.songLyric.yrcData.length);
   const lyrics = useYrc ? musicStore.songLyric.yrcData : musicStore.songLyric.lrcData;
   // 无歌词时
-  if (!lyrics || !lyrics.length) return { index: -1, lyrics: [] };
+  if (!lyrics || !lyrics.length) return -1;
 
   // 普通歌词：保持原有计算方式
   if (!useYrc) {
     const idx = lyrics.findIndex((v) => (v?.time ?? 0) >= playSeek);
     const index = idx === -1 ? lyrics.length - 1 : idx - 1;
-    return { index, lyrics };
+    return index;
   }
 
   // 逐字歌词（并发最多三句同时存在）：
@@ -533,7 +551,7 @@ export const calculateLyricIndex = (
 
   const firstStart = lyrics[0]?.time ?? 0;
   if (playSeek < firstStart) {
-    return { index: -1, lyrics };
+    return -1;
   }
 
   const activeIndices: number[] = [];
@@ -549,14 +567,14 @@ export const calculateLyricIndex = (
     // 不在任何句子的区间里：退回到最近一句（按开始时间）
     const nextIdx = lyrics.findIndex((v) => (v?.time ?? 0) > playSeek);
     const index = nextIdx === -1 ? lyrics.length - 1 : nextIdx - 1;
-    return { index, lyrics };
+    return index;
   }
 
   if (activeIndices.length === 1) {
-    return { index: activeIndices[0], lyrics };
+    return activeIndices[0];
   }
 
   // 激活句 >= 2：如果达到三句或更多，限制为最后三句并发；否则保持最后两句
   const concurrent = activeIndices.length >= 3 ? activeIndices.slice(-3) : activeIndices.slice(-2);
-  return { index: concurrent[0], lyrics };
+  return concurrent[0];
 };

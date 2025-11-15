@@ -1,8 +1,11 @@
-import { isElectron } from "./helper";
-import { openUpdateApp } from "./modal";
+import { isElectron } from "./env";
+import { openSetting, openUpdateApp } from "./modal";
 import { useMusicStore, useDataStore, useStatusStore } from "@/stores";
 import { toLikeSong } from "./auth";
 import player from "./player";
+import { cloneDeep } from "lodash-es";
+import { getPlayerInfo } from "./player-utils/song";
+import { SettingType } from "@/types/main";
 
 // 关闭更新状态
 const closeUpdateStatus = () => {
@@ -36,9 +39,32 @@ const initIpc = () => {
       const musicStore = useMusicStore();
       await toLikeSong(musicStore.playSong, !dataStore.isLikeSong(musicStore.playSong.id));
     });
+    // 开启设置
+    window.electron.ipcRenderer.on("openSetting", (_, type: SettingType) => openSetting(type));
     // 桌面歌词开关
     window.electron.ipcRenderer.on("toogleDesktopLyric", () => player.toggleDesktopLyric());
-    window.electron.ipcRenderer.on("closeDesktopLyric", () => player.toggleDesktopLyric());
+    // 显式关闭桌面歌词
+    window.electron.ipcRenderer.on("closeDesktopLyric", () => player.setDesktopLyricShow(false));
+    // 请求歌词数据
+    window.electron.ipcRenderer.on("request-desktop-lyric-data", () => {
+      const musicStore = useMusicStore();
+      const statusStore = useStatusStore();
+      if (player) {
+        window.electron.ipcRenderer.send(
+          "update-desktop-lyric-data",
+          cloneDeep({
+            playStatus: statusStore.playStatus,
+            playName: getPlayerInfo() ?? "未知歌曲",
+            currentTime: statusStore.currentTime,
+            songId: musicStore.playSong?.id,
+            songOffset: statusStore.getSongOffset(musicStore.playSong?.id),
+            lrcData: musicStore.songLyric.lrcData ?? [],
+            yrcData: musicStore.songLyric.yrcData ?? [],
+            lyricIndex: statusStore.lyricIndex,
+          }),
+        );
+      }
+    });
     // 无更新
     window.electron.ipcRenderer.on("update-not-available", () => {
       closeUpdateStatus();

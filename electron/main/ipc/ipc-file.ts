@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { basename, join, resolve } from "path";
+import { basename, isAbsolute, join, relative, resolve } from "path";
 import { access, readFile, stat, unlink, writeFile } from "fs/promises";
 import { parseFile } from "music-metadata";
 import { getFileID, getFileMD5, metaDataLyricsArrayToLrc } from "../utils/helper";
@@ -200,11 +200,15 @@ const initFileIpc = (): void => {
   ipcMain.handle(
     "read-local-lyric",
     async (_, lyricDir: string, id: number, ext: string): Promise<string> => {
-      const lyricPath = join(lyricDir, `${id}.${ext}`);
+      const pattern = `**/{,*.}${id}.${ext}`;
       try {
-        await access(lyricPath);
-        const lyric = await readFile(lyricPath, "utf-8");
-        if (lyric) return lyric;
+        const files = await FastGlob(pattern, { cwd: lyricDir });
+        if (files.length > 0) {
+          const firstMatch = join(lyricDir, files[0]);
+          await access(firstMatch);
+          const lyric = await readFile(firstMatch, "utf-8");
+          if (lyric) return lyric;
+        }
       } catch {
         /* empty */
       }
@@ -371,6 +375,16 @@ const initFileIpc = (): void => {
       }
     },
   );
+
+  // 检查是否是子文件夹
+  ipcMain.handle("check-if-subfolder", (_, localFilesPath: string[], selectedDir: string) => {
+    const resolvedSelectedDir = resolve(selectedDir);
+    const allPaths = localFilesPath.map((p) => resolve(p));
+    return allPaths.some((existingPath) => {
+      const relativePath = relative(existingPath, resolvedSelectedDir);
+      return relativePath && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+    });
+  });
 };
 
 export default initFileIpc;

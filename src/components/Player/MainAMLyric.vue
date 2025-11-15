@@ -4,7 +4,9 @@
       :key="amLyricsData?.[0]?.words?.length"
       :class="['lyric-am', { pure: statusStore.pureLyricMode }]"
     >
+      <div v-if="statusStore.lyricLoading" class="lyric-loading">歌词正在加载中...</div>
       <LyricPlayer
+        v-else
         ref="lyricPlayerRef"
         :lyricLines="amLyricsData"
         :currentTime="playSeek"
@@ -37,7 +39,6 @@ import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import { msToS } from "@/utils/time";
 import { getLyricLanguage } from "@/utils/lyric";
 import player from "@/utils/player";
-import { watch } from "vue";
 import LyricMenu from "./LyricMenu.vue";
 
 const musicStore = useMusicStore();
@@ -47,11 +48,15 @@ const settingStore = useSettingStore();
 const lyricPlayerRef = ref<any | null>(null);
 
 // 实时播放进度
-const playSeek = ref<number>(player.getSeek());
+const playSeek = ref<number>(
+  Math.floor((player.getSeek() + statusStore.getSongOffset(musicStore.playSong?.id)) * 1000),
+);
 
 // 实时更新播放进度
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
-  const seekInSeconds = player.getSeek();
+  const songId = musicStore.playSong?.id;
+  const offsetSeconds = statusStore.getSongOffset(songId);
+  const seekInSeconds = player.getSeek() + offsetSeconds;
   playSeek.value = Math.floor(seekInSeconds * 1000);
 });
 
@@ -80,7 +85,8 @@ const amLyricsData = computed<LyricLine[]>(() => {
 const jumpSeek = (line: any) => {
   if (!line?.line?.lyricLine?.startTime) return;
   const time = msToS(line.line.lyricLine.startTime);
-  player.setSeek(time);
+  const offsetSeconds = statusStore.getSongOffset(musicStore.playSong?.id);
+  player.setSeek(time - offsetSeconds);
   player.play();
 };
 
@@ -163,5 +169,15 @@ onBeforeUnmount(() => {
   :lang(ja) {
     font-family: var(--ja-font-family);
   }
+}
+
+.lyric-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--amll-lyric-view-color, #efefef);
+  font-size: 22px;
 }
 </style>
