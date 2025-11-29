@@ -37,6 +37,40 @@
       </n-collapse-transition>
     </div>
     <div class="set-list">
+      <n-h3 prefix="bar"> 特别鸣谢 </n-h3>
+      <n-flex class="link">
+        <n-card
+          v-for="(item, index) in contributors"
+          :key="index"
+          class="link-item"
+          hoverable
+          @click="openLink(item.url)"
+        >
+          <n-flex vertical :gap="4">
+            <n-text class="name" strong> {{ item.name }} </n-text>
+            <n-text class="tip" :depth="3" style="font-size: 12px">
+              {{ item.description }}
+            </n-text>
+          </n-flex>
+        </n-card>
+      </n-flex>
+    </div>
+    <div class="set-list">
+      <n-h3 prefix="bar"> 社区与资讯 </n-h3>
+      <n-flex class="link">
+        <n-card
+          v-for="(item, index) in communityData"
+          :key="index"
+          class="link-item"
+          hoverable
+          @click="openLink(item.url)"
+        >
+          <SvgIcon :name="item.icon" :size="26" />
+          <n-text class="name"> {{ item.name }} </n-text>
+        </n-card>
+      </n-flex>
+    </div>
+    <div class="set-list">
       <n-h3 prefix="bar"> 历史版本 </n-h3>
       <n-collapse-transition :show="oldVersion?.length > 0">
         <n-collapse accordion>
@@ -59,21 +93,6 @@
         </n-collapse>
       </n-collapse-transition>
     </div>
-    <div class="set-list">
-      <n-h3 prefix="bar"> 社区与资讯 </n-h3>
-      <n-flex class="link">
-        <n-card
-          v-for="(item, index) in communityData"
-          :key="index"
-          class="link-item"
-          hoverable
-          @click="openLink(item.url)"
-        >
-          <SvgIcon :name="item.icon" :size="26" />
-          <n-text class="name"> {{ item.name }} </n-text>
-        </n-card>
-      </n-flex>
-    </div>
   </div>
 </template>
 
@@ -87,8 +106,22 @@ import { isElectron } from "@/utils/env";
 
 const statusStore = useStatusStore();
 
+// 特别鸣谢
+const contributors = [
+  {
+    name: "imsyy",
+    url: "https://github.com/imsyy",
+    description: "SPlayer 作者",
+  },
+];
+
 // 社区数据
 const communityData = [
+  {
+    name: "加入交流群",
+    url: "https://qm.qq.com/cgi-bin/qm/qr?k=2-cVSf1bE0AvAehCib00qFEFdUvPaJ_k&jump_from=webapi&authKey=1NEhib9+GsmsXVo2rCc0IbRaVHeeRXJJ0gbsyKDcIwDdAzYySOubkFCvkV32+7Cw",
+    icon: "QQ",
+  },
   {
     name: "GitHub",
     url: packageJson.github,

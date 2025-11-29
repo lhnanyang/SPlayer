@@ -146,6 +146,7 @@
     <!-- 功能 -->
     <Transition name="fade" mode="out-in">
       <n-flex
+        v-if="!isMobile"
         :key="statusStore.personalFmMode ? 'fm' : 'normal'"
         :size="[8, 0]"
         class="play-menu"
@@ -161,8 +162,8 @@
             vertical
           >
             <div class="time">
-              <n-text depth="2">{{ secondsToTime(statusStore.currentTime) }}</n-text>
-              <n-text depth="2">{{ secondsToTime(statusStore.duration) }}</n-text>
+              <n-text depth="2">{{ msToTime(statusStore.currentTime) }}</n-text>
+              <n-text depth="2">{{ msToTime(statusStore.duration) }}</n-text>
             </div>
             <!-- 定时关闭 -->
             <n-tag
@@ -189,8 +190,9 @@
 <script setup lang="ts">
 import type { DropdownOption } from "naive-ui";
 import { useMusicStore, useStatusStore, useDataStore, useSettingStore } from "@/stores";
-import { secondsToTime, convertSecondsToTime } from "@/utils/time";
+import { msToTime, convertSecondsToTime } from "@/utils/time";
 import { renderIcon, coverLoaded } from "@/utils/helper";
+import { isMobile } from "@/utils/env";
 import { toLikeSong } from "@/utils/auth";
 import {
   openAutoClose,
@@ -199,9 +201,10 @@ import {
   openJumpArtist,
   openPlaylistAdd,
 } from "@/utils/modal";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
@@ -262,6 +265,7 @@ const isShowLyrics = computed(() => {
   const isHasLrc = musicStore.isHasLrc;
   return (
     isHasLrc &&
+    !statusStore.lyricLoading &&
     settingStore.barLyricShow &&
     musicStore.playSong.type !== "radio" &&
     statusStore.playStatus &&
@@ -275,9 +279,10 @@ const instantLyrics = computed(() => {
   const content = isYrc
     ? musicStore.songLyric.yrcData[statusStore.lyricIndex]
     : musicStore.songLyric.lrcData[statusStore.lyricIndex];
-  return content?.tran && settingStore.showTran
-    ? `${content?.content}（ ${content?.tran} ）`
-    : content?.content;
+  const contentStr = content?.words?.map((v) => v.word).join("") || "";
+  return content?.translatedLyric && settingStore.showTran
+    ? `${contentStr}（ ${content?.translatedLyric} ）`
+    : contentStr || "";
 });
 </script>
 
@@ -292,10 +297,14 @@ const instantLyrics = computed(() => {
   background-color: var(--surface-container-hex);
   // background-color: rgba(var(--surface-container), 0.28);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   transition: bottom 0.3s;
   z-index: 10;
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr auto;
+    padding: 0 20px;
+  }
   &.show {
     bottom: 0;
   }
@@ -320,8 +329,8 @@ const instantLyrics = computed(() => {
   .play-data {
     display: flex;
     flex-direction: row;
-    max-width: 100%;
     overflow: hidden;
+    max-width: 640px;
     .cover {
       position: relative;
       display: flex;
@@ -372,7 +381,8 @@ const instantLyrics = computed(() => {
     .info {
       display: flex;
       flex-direction: column;
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       .data {
         display: flex;
         align-items: center;
@@ -380,18 +390,21 @@ const instantLyrics = computed(() => {
         .name {
           font-weight: bold;
           font-size: 16px;
-          width: max-content;
-          max-width: calc(100% - 100px);
+          flex: 0 1 auto;
+          width: auto;
+          min-width: 0;
           transition: color 0.3s;
         }
         .n-tag {
           margin-left: 8px;
+          flex-shrink: 0;
         }
         .like {
           color: var(--primary-hex);
           margin-left: 8px;
           transition: transform 0.3s;
           cursor: pointer;
+          flex-shrink: 0;
           &:hover {
             transform: scale(1.15);
           }
@@ -402,6 +415,7 @@ const instantLyrics = computed(() => {
         .more {
           margin-left: 8px;
           cursor: pointer;
+          flex-shrink: 0;
         }
       }
       .artists {
@@ -445,6 +459,13 @@ const instantLyrics = computed(() => {
     flex-direction: row;
     justify-content: center;
     align-items: center;
+    margin: 0 40px;
+    @media (max-width: 768px) {
+      margin: 0;
+      .play-icon {
+        display: none;
+      }
+    }
     .play-pause {
       --n-width: 44px;
       --n-height: 44px;
@@ -452,6 +473,9 @@ const instantLyrics = computed(() => {
       transition:
         background-color 0.3s,
         transform 0.3s;
+      @media (max-width: 768px) {
+        margin: 0;
+      }
       .n-icon {
         transition: opacity 0.1s ease-in-out;
       }
@@ -487,6 +511,8 @@ const instantLyrics = computed(() => {
     }
   }
   .play-menu {
+    margin-left: auto;
+    max-width: 640px;
     .time-container {
       margin-right: 8px;
       .n-tag {

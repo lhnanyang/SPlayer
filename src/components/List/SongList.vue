@@ -44,7 +44,7 @@
                 </div>
               </n-dropdown>
               <n-text v-else class="title">标题</n-text>
-              <n-text v-if="type !== 'radio' && !hiddenAlbum" class="album">专辑</n-text>
+              <n-text v-if="type !== 'radio' && !hiddenAlbum && !isMobile" class="album">专辑</n-text>
               <n-text v-if="type !== 'radio'" class="actions">操作</n-text>
               <n-text v-if="type === 'radio'" class="meta date">更新日期</n-text>
               <n-text v-if="type === 'radio'" class="meta">播放量</n-text>
@@ -58,7 +58,7 @@
               :song="itemData"
               :index="index"
               :hiddenCover="hiddenCover"
-              :hiddenAlbum="hiddenAlbum"
+              :hiddenAlbum="hiddenAlbum || isMobile"
               :hiddenSize="hiddenSize"
               @dblclick.stop="
                 doubleClickAction === 'add'
@@ -123,14 +123,15 @@
 
 <script setup lang="ts">
 import type { DropdownOption } from "naive-ui";
-import type { SongType, SortType } from "@/types/main";
+import { SongType, SortType } from "@/types/main";
 import { useMusicStore, useStatusStore } from "@/stores";
 import { VirtList } from "vue-virt-list";
 import { entries, isEmpty } from "lodash-es";
 import { sortOptions } from "@/utils/meta";
 import { renderIcon } from "@/utils/helper";
+import { usePlayer } from "@/utils/player";
+import { isMobile } from "@/utils/env";
 import SongListMenu from "@/components/Menu/SongListMenu.vue";
-import player from "@/utils/player";
 
 const props = withDefaults(
   defineProps<{
@@ -177,6 +178,7 @@ const emit = defineEmits<{
   removeSong: [id: number[]];
 }>();
 
+const player = usePlayer();
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 
@@ -234,10 +236,13 @@ const listData = computed<SongType[]>(() => {
 const listKey = computed(() => {
   // 每日推荐
   if (props.isDailyRecommend) {
-    return musicStore.dailySongsData.timestamp || 0;
+    return `daily-${musicStore.dailySongsData.timestamp || 0}`;
   }
-  // 其他列表长度（检测增删操作）
-  return listData.value?.length || 0;
+  // 使用 playListId 作为主要 key
+  if (props.playListId) {
+    return `playlist-${props.playListId}`;
+  }
+  return `type-${props.type}`;
 });
 
 // 列表是否具有播放歌曲
@@ -261,7 +266,9 @@ const sortMenuOptions = computed<DropdownOption[]>(() =>
 // 列表滚动
 const onScroll = (e: Event) => {
   emit("scroll", e);
-  scrollTop.value = (e.target as HTMLElement).scrollTop;
+  const top = (e.target as HTMLElement).scrollTop;
+  scrollTop.value = top;
+  offset.value = top;
 };
 
 // 列表触底

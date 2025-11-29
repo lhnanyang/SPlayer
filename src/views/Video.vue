@@ -80,7 +80,7 @@
     <Transition name="fade" mode="out-in">
       <div v-if="videoData" class="desc">
         <n-divider />
-        <n-ellipsis :line-clamp="3" :tooltip="{ placement: 'bottom', width: 'trigger' }">
+        <n-ellipsis expand-trigger="click" :line-clamp="3" :tooltip="false">
           {{ videoData?.description || "该视频暂无简介" }}
         </n-ellipsis>
         <n-flex v-if="videoData?.tags" class="tags">
@@ -132,13 +132,14 @@ import { formatCommentList, formatCoverList } from "@/utils/format";
 import { isArray, isEmpty } from "lodash-es";
 import { formatNumber } from "@/utils/helper";
 import { getComment } from "@/api/comment";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 // Plyr
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import { formatTimestamp } from "@/utils/time";
 
 const router = useRouter();
+const player = usePlayer();
 const statusStore = useStatusStore();
 
 // 是否激活

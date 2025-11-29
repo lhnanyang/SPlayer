@@ -1,17 +1,27 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { basename, isAbsolute, join, relative, resolve } from "path";
-import { access, readFile, stat, unlink, writeFile } from "fs/promises";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "path";
+import { access, readdir, readFile, stat, unlink, writeFile } from "fs/promises";
 import { parseFile } from "music-metadata";
 import { getFileID, getFileMD5, metaDataLyricsArrayToLrc } from "../utils/helper";
 import { File, Picture, Id3v2Settings } from "node-taglib-sharp";
 import { ipcLog } from "../logger";
-import FastGlob from "fast-glob";
 import { download } from "electron-dl";
+import { Options as GlobOptions } from "fast-glob/out/settings";
+import FastGlob from "fast-glob";
 
 /**
  * 文件相关 IPC
  */
 const initFileIpc = (): void => {
+  /**
+   * 获取全局搜索配置
+   * @param cwd 当前工作目录
+   */
+  const globOpt = (cwd?: string): GlobOptions => ({
+    cwd,
+    caseSensitiveMatch: false,
+  });
+
   // 默认文件夹
   ipcMain.handle(
     "get-default-dir",
@@ -23,44 +33,53 @@ const initFileIpc = (): void => {
   // 遍历音乐文件
   ipcMain.handle("get-music-files", async (_, dirPath: string) => {
     try {
+      // 校验路径有效性
+      if (!dirPath || dirPath.trim() === "") {
+        ipcLog.warn("⚠️ Empty directory path provided, skipping");
+        return [];
+      }
       // 规范化路径
       const filePath = resolve(dirPath).replace(/\\/g, "/");
+      // 检查目录是否存在
+      try {
+        await access(filePath);
+      } catch {
+        ipcLog.warn(`⚠️ Directory not accessible: ${filePath}`);
+        return [];
+      }
       console.info(`📂 Fetching music files from: ${filePath}`);
       // 查找指定目录下的所有音乐文件
-      const musicFiles = await FastGlob("**/*.{mp3,wav,flac,aac,webm}", { cwd: filePath });
-      // 解析元信息
+      const musicFiles = await FastGlob("**/*.{mp3,wav,flac,aac,webm}", globOpt(filePath));
+      // 解析元信息（使用 allSettled 防止单个文件失败影响整体）
       const metadataPromises = musicFiles.map(async (file) => {
-        const filePath = join(dirPath, file);
-        // 处理元信息
-        const { common, format } = await parseFile(filePath);
-        // 获取文件大小
-        const { size } = await stat(filePath);
-        // 判断音质等级
-        let quality: string;
-        if ((format.sampleRate || 0) >= 96000 || (format.bitsPerSample || 0) > 16) {
-          quality = "Hi-Res";
-        } else if ((format.sampleRate || 0) >= 44100) {
-          quality = "HQ";
-        } else {
-          quality = "SQ";
+        const fullPath = join(dirPath, file);
+        try {
+          // 处理元信息
+          const { common, format } = await parseFile(fullPath);
+          // 获取文件大小
+          const { size } = await stat(fullPath);
+          return {
+            id: getFileID(fullPath),
+            name: common.title || basename(fullPath),
+            artists: common.artists?.[0] || common.artist,
+            album: common.album || "",
+            alia: common.comment?.[0]?.text || "",
+            duration: (format?.duration ?? 0) * 1000,
+            size: (size / (1024 * 1024)).toFixed(2),
+            path: fullPath,
+            quality: format.bitrate ?? 0,
+          };
+        } catch (err) {
+          ipcLog.warn(`⚠️ Failed to parse file: ${fullPath}`, err);
+          return null;
         }
-        return {
-          id: getFileID(filePath),
-          name: common.title || basename(filePath),
-          artists: common.artists?.[0] || common.artist,
-          album: common.album || "",
-          alia: common.comment?.[0]?.text || "",
-          duration: (format?.duration ?? 0) * 1000,
-          size: (size / (1024 * 1024)).toFixed(2),
-          path: filePath,
-          quality,
-        };
       });
-      const metadataArray = await Promise.all(metadataPromises);
-      return metadataArray;
+      const metadataResults = await Promise.all(metadataPromises);
+      // 过滤掉解析失败的文件
+      return metadataResults.filter((item) => item !== null);
     } catch (error) {
       ipcLog.error("❌ Error fetching music metadata:", error);
-      throw error;
+      return [];
     }
   });
 
@@ -129,38 +148,61 @@ const initFileIpc = (): void => {
     "get-music-lyric",
     async (
       _,
-      path: string,
+      musicPath: string, // 参数名改为 musicPath 以示区分
     ): Promise<{
       lyric: string;
       format: "lrc" | "ttml";
     }> => {
       try {
-        const filePath = resolve(path).replace(/\\/g, "/");
-        const { common } = await parseFile(filePath);
-
-        // 尝试获取同名的歌词文件
-        const filePathWithoutExt = filePath.replace(/\.[^.]+$/, "");
-        for (const ext of ["ttml", "lrc"] as const) {
-          const lyricPath = `${filePathWithoutExt}.${ext}`;
-          ipcLog.info("lyricPath", lyricPath);
-          try {
-            await access(lyricPath);
-            const lyric = await readFile(lyricPath, "utf-8");
-            if (lyric && lyric != "") return { lyric, format: ext };
-          } catch {
-            /* empty */
+        // 获取文件基本信息
+        const absPath = resolve(musicPath);
+        const dir = dirname(absPath);
+        const ext = extname(absPath);
+        const baseName = basename(absPath, ext);
+        // 读取目录下所有文件
+        let files: string[] = [];
+        try {
+          files = await readdir(dir);
+        } catch (error) {
+          ipcLog.error("❌ Failed to read directory:", dir);
+          throw error;
+        }
+        // 遍历优先级
+        for (const format of ["lrc", "ttml"] as const) {
+          // 构造期望目标文件名
+          const targetNameLower = `${baseName}.${format}`.toLowerCase();
+          // 在文件列表中查找是否存在匹配项（忽略大小写）
+          const matchedFileName = files.find((file) => file.toLowerCase() === targetNameLower);
+          if (matchedFileName) {
+            try {
+              const lyricPath = join(dir, matchedFileName);
+              const lyric = await readFile(lyricPath, "utf-8");
+              // 若不为空
+              if (lyric && lyric.trim() !== "") {
+                ipcLog.info(`✅ Local lyric found (${format}): ${lyricPath}`);
+                return { lyric, format };
+              }
+            } catch {
+              // 读取失败则尝试下一种格式
+              continue;
+            }
           }
         }
-
-        // 尝试获取元数据
-        const lyric = common?.lyrics?.[0]?.syncText;
-        if (lyric && lyric.length > 0) {
-          return { lyric: metaDataLyricsArrayToLrc(lyric), format: "lrc" };
+        // 如果本地文件没找到，尝试读取内置元数据 (ID3 Tags)
+        const { common } = await parseFile(absPath);
+        const syncedLyric = common?.lyrics?.[0]?.syncText;
+        if (syncedLyric && syncedLyric.length > 0) {
+          return {
+            lyric: metaDataLyricsArrayToLrc(syncedLyric),
+            format: "lrc",
+          };
         } else if (common?.lyrics?.[0]?.text) {
-          return { lyric: common?.lyrics?.[0]?.text, format: "lrc" };
+          return {
+            lyric: common?.lyrics?.[0]?.text,
+            format: "lrc",
+          };
         }
-
-        // 没有歌词
+        // 都没有找到
         return { lyric: "", format: "lrc" };
       } catch (error) {
         ipcLog.error("❌ Error fetching music lyric:", error);
@@ -199,20 +241,52 @@ const initFileIpc = (): void => {
   // 读取本地歌词
   ipcMain.handle(
     "read-local-lyric",
-    async (_, lyricDir: string, id: number, ext: string): Promise<string> => {
-      const pattern = `**/{,*.}${id}.${ext}`;
+    async (_, lyricDirs: string[], id: number): Promise<{ lrc: string; ttml: string }> => {
+      const result = { lrc: "", ttml: "" };
+
       try {
-        const files = await FastGlob(pattern, { cwd: lyricDir });
-        if (files.length > 0) {
-          const firstMatch = join(lyricDir, files[0]);
-          await access(firstMatch);
-          const lyric = await readFile(firstMatch, "utf-8");
-          if (lyric) return lyric;
+        // 定义需要查找的模式
+        // 此处的 `{,*.}` 表示这里可以取 `` (empty) 也可以取 `*.`
+        // 将歌词文件命名为 `歌曲ID.后缀名` 或者 `任意前缀.歌曲ID.后缀名` 均可
+        const patterns = {
+          ttml: `**/{,*.}${id}.ttml`,
+          lrc: `**/{,*.}${id}.lrc`,
+        };
+
+        // 遍历每一个目录
+        for (const dir of lyricDirs) {
+          try {
+            // 查找 ttml
+            if (!result.ttml) {
+              const ttmlFiles = await FastGlob(patterns.ttml, globOpt(dir));
+              if (ttmlFiles.length > 0) {
+                const filePath = join(dir, ttmlFiles[0]);
+                await access(filePath);
+                result.ttml = await readFile(filePath, "utf-8");
+              }
+            }
+
+            // 查找 lrc
+            if (!result.lrc) {
+              const lrcFiles = await FastGlob(patterns.lrc, globOpt(dir));
+              if (lrcFiles.length > 0) {
+                const filePath = join(dir, lrcFiles[0]);
+                await access(filePath);
+                result.lrc = await readFile(filePath, "utf-8");
+              }
+            }
+
+            // 如果两种文件都找到了就提前结束搜索
+            if (result.ttml && result.lrc) break;
+          } catch {
+            // 某个路径异常，跳过
+          }
         }
       } catch {
-        /* empty */
+        /* 忽略错误 */
       }
-      return "";
+
+      return result;
     },
   );
 
@@ -304,10 +378,10 @@ const initFileIpc = (): void => {
         lyric?: string;
         songData?: any;
       } = {
-        fileName: "未知文件名",
-        fileType: "mp3",
-        path: app.getPath("downloads"),
-      },
+          fileName: "未知文件名",
+          fileType: "mp3",
+          path: app.getPath("downloads"),
+        },
     ): Promise<boolean> => {
       try {
         // 获取窗口

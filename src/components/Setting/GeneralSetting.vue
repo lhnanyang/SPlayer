@@ -90,10 +90,52 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">搜索关键词建议</n-text>
+          <n-text class="tip" :depth="3">是否启用搜索关键词建议</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.enableSearchKeyword" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">侧边栏显示封面</n-text>
           <n-text class="tip" :depth="3">是否显示歌单的封面，如果有</n-text>
         </div>
         <n-switch class="set" v-model:value="settingStore.menuShowCover" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">侧边栏隐藏</n-text>
+          <n-text class="tip" :depth="3">配置需要在侧边栏隐藏的菜单项</n-text>
+        </div>
+        <n-button
+          type="primary"
+          strong
+          secondary
+          @click="openSidebarHideManager"
+        >
+          配置
+        </n-button>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示歌曲音质</n-text>
+          <n-text class="tip" :depth="3">是否列表中显示歌曲音质</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongQuality" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示特权标签</n-text>
+          <n-text class="tip" :depth="3">是否显示如 VIP、EP 等特权标签</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongPrivilegeTag" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">显示原唱翻唱标签</n-text>
+          <n-text class="tip" :depth="3">是否显示歌曲原唱翻唱标签</n-text>
+        </div>
+        <n-switch class="set" v-model:value="settingStore.showSongOriginalTag" :round="false" />
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -289,6 +331,7 @@ import { isDev, isElectron } from "@/utils/env";
 import { getCoverColor } from "@/utils/player-utils/song";
 import { isEmpty } from "lodash-es";
 import themeColor from "@/assets/data/themeColor.json";
+import { openSidebarHideManager } from "@/utils/modal";
 
 const dataStore = useDataStore();
 const musicStore = useMusicStore();

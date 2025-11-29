@@ -1,4 +1,4 @@
-import { LyricType } from "@/types/main";
+import { type LyricLine } from "@applemusic-like-lyrics/lyric";
 
 /** 桌面歌词数据 */
 export interface LyricData {
@@ -8,13 +8,15 @@ export interface LyricData {
   playStatus?: boolean;
   /** 当前播放进度 */
   currentTime?: number;
+  /** 是否正在加载歌词 */
+  lyricLoading?: boolean;
   /** 当前播放歌曲 id（用于偏移校准） */
   songId?: number;
   /** 当前歌曲的时间偏移（秒，正负均可） */
   songOffset?: number;
   /** 歌词数据 */
-  lrcData?: LyricType[];
-  yrcData?: LyricType[];
+  lrcData?: LyricLine[];
+  yrcData?: LyricLine[];
   /** 歌词播放索引 */
   lyricIndex?: number;
 }
@@ -52,7 +54,7 @@ export interface LyricConfig {
  */
 export interface RenderLine {
   /** 当前整行歌词数据（用于逐字渲染） */
-  line: LyricType;
+  line: LyricLine;
   /** 当前行在歌词数组中的索引 */
   index: number;
   /** 唯一键 */

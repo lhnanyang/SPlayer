@@ -68,13 +68,6 @@
       </n-card>
       <n-card v-if="isElectron" class="set-item">
         <div class="label">
-          <n-text class="name">音乐解锁</n-text>
-          <n-text class="tip" :depth="3">在无法正常播放时进行替换，可能会与原曲不符</n-text>
-        </div>
-        <n-switch v-model:value="settingStore.useSongUnlock" class="set" :round="false" />
-      </n-card>
-      <n-card v-if="isElectron" class="set-item">
-        <div class="label">
           <n-text class="name">音频输出设备</n-text>
           <n-text class="tip" :depth="3">新增或移除音频设备后请重新打开设置</n-text>
         </div>
@@ -85,6 +78,35 @@
           :render-option="renderOption"
           @update:value="playDeviceChange"
         />
+      </n-card>
+    </div>
+    <div v-if="isElectron" class="set-list">
+      <n-h3 prefix="bar">
+        音乐解锁
+        <n-tag type="warning" size="small" round>Beta</n-tag>
+      </n-h3>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">音乐解锁</n-text>
+          <n-text class="tip" :depth="3"> 在无法正常播放时进行替换，可能会与原曲不符 </n-text>
+        </div>
+        <n-switch v-model:value="settingStore.useSongUnlock" class="set" :round="false" />
+      </n-card>
+      <!-- 音源配置 -->
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">音源配置</n-text>
+          <n-text class="tip" :depth="3"> 配置歌曲解锁的音源顺序或是否启用 </n-text>
+        </div>
+        <n-button
+          :disabled="!settingStore.useSongUnlock"
+          type="primary"
+          strong
+          secondary
+          @click="openSongUnlockManager"
+        >
+          配置
+        </n-button>
       </n-card>
     </div>
     <div class="set-list">
@@ -119,7 +141,6 @@
           :options="[
             {
               label: '流体效果',
-              disabled: true,
               value: 'animation',
             },
             {
@@ -134,13 +155,36 @@
           class="set"
         />
       </n-card>
-      <n-card class="set-item">
-        <div class="label">
-          <n-text class="name">全屏播放器留存</n-text>
-          <n-text class="tip" :depth="3">在播放器收起时是否销毁，开启将会增大内存占用</n-text>
-        </div>
-        <n-switch v-model:value="settingStore.fullPlayerCache" class="set" :round="false" />
-      </n-card>
+      <n-collapse-transition :show="settingStore.playerBackgroundType === 'animation'">
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">背景动画帧率</n-text>
+            <n-text class="tip" :depth="3">单位 fps，最小 24，最大 240</n-text>
+          </div>
+          <n-input-number
+            v-model:value="settingStore.playerBackgroundFps"
+            :min="24"
+            :max="256"
+            :show-button="false"
+            class="set"
+            placeholder="请输入背景动画帧率"
+          />
+        </n-card>
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">背景动画流动速度</n-text>
+            <n-text class="tip" :depth="3">单位 倍数，最小 0.1，最大 10</n-text>
+          </div>
+          <n-input-number
+            v-model:value="settingStore.playerBackgroundFlowSpeed"
+            :min="0.1"
+            :max="10"
+            :show-button="false"
+            class="set"
+            placeholder="请输入背景动画流动速度"
+          />
+        </n-card>
+      </n-collapse-transition>
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">显示前奏倒计时</n-text>
@@ -154,6 +198,13 @@
           <n-text class="tip" :depth="3">在播放时将歌手信息更改为歌词</n-text>
         </div>
         <n-switch v-model:value="settingStore.barLyricShow" class="set" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">展示播放状态信息</n-text>
+          <n-text class="tip" :depth="3">展示当前歌曲及歌词的状态信息</n-text>
+        </div>
+        <n-switch v-model:value="settingStore.showPlayMeta" class="set" :round="false" />
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -197,18 +248,6 @@
         </div>
         <n-switch v-model:value="settingStore.smtcOpen" class="set" :round="false" />
       </n-card>
-      <n-card class="set-item">
-        <div class="label">
-          <n-text class="name">输出高清封面</n-text>
-          <n-text class="tip" :depth="3">开启 SMTC 时是否输出高清封面</n-text>
-        </div>
-        <n-switch
-          v-model:value="settingStore.smtcOutputHighQualityCover"
-          class="set"
-          :round="false"
-          :disabled="!settingStore.smtcOpen || true"
-        />
-      </n-card>
     </div>
   </div>
 </template>
@@ -220,8 +259,10 @@ import { isLogin } from "@/utils/auth";
 import { renderOption } from "@/utils/helper";
 import { isElectron } from "@/utils/env";
 import { uniqBy } from "lodash";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
+import { openSongUnlockManager } from "@/utils/modal";
 
+const player = usePlayer();
 const settingStore = useSettingStore();
 
 // 输出设备数据

@@ -37,17 +37,13 @@
           <n-h2 class="name text-hidden"> 我喜欢的音乐 </n-h2>
           <n-collapse-transition :show="!listScrolling" class="collapse">
             <!-- 简介 -->
-            <n-ellipsis
+            <n-text
               v-if="playlistDetailData.description"
-              :line-clamp="1"
-              :tooltip="{
-                trigger: 'click',
-                placement: 'bottom',
-                width: 'trigger',
-              }"
+              class="description text-hidden"
+              @click="openDescModal(playlistDetailData.description)"
             >
               {{ playlistDetailData.description }}
-            </n-ellipsis>
+            </n-text>
             <!-- 信息 -->
             <n-flex class="meta">
               <div class="item">
@@ -58,7 +54,7 @@
                 <SvgIcon name="Update" :depth="3" />
                 <n-text>{{ formatTimestamp(playlistDetailData.updateTime) }}</n-text>
               </div>
-              <div v-else-if="playlistDetailData.createTime" class="item">
+              <div v-if="playlistDetailData.createTime" class="item">
                 <SvgIcon name="Time" :depth="3" />
                 <n-text>{{ formatTimestamp(playlistDetailData.createTime) }}</n-text>
               </div>
@@ -177,12 +173,13 @@ import { coverLoaded, formatNumber, fuzzySearch, renderIcon } from "@/utils/help
 import { renderToolbar } from "@/utils/meta";
 import { debounce, isObject, uniqBy } from "lodash-es";
 import { useDataStore, useStatusStore } from "@/stores";
-import { openBatchList, openUpdatePlaylist } from "@/utils/modal";
+import { openBatchList, openDescModal, openUpdatePlaylist } from "@/utils/modal";
 import { formatTimestamp } from "@/utils/time";
 import { isLogin, updateUserLikePlaylist } from "@/utils/auth";
-import player from "@/utils/player";
+import { usePlayer } from "@/utils/player";
 
 const router = useRouter();
+const player = usePlayer();
 const dataStore = useDataStore();
 const statusStore = useStatusStore();
 
@@ -541,7 +538,7 @@ onMounted(async () => {
         border-radius: 8px;
         height: 32px;
       }
-      :deep(.n-ellipsis) {
+      .description {
         margin-bottom: 8px;
         cursor: pointer;
       }
