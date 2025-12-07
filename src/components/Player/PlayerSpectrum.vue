@@ -25,6 +25,7 @@ const isKeepDrawing = ref<boolean>(true);
  */
 const drawSpectrum = () => {
   const spectrumData = player.getSpectrumData();
+
   if (!spectrumData) return;
   // 转换为普通数组并处理
   const data = Array.from(spectrumData).slice(10);
@@ -98,16 +99,19 @@ const roundRect = (
 };
 
 // 开始绘制频谱
-const { pause: pauseDraw, resume: resumeDraw } = useRafFn(() => {
-  drawSpectrum();
-});
+const { pause: pauseDraw, resume: resumeDraw } = useRafFn(
+  () => {
+    drawSpectrum();
+  },
+  { immediate: false },
+);
 
 onMounted(() => {
+  isKeepDrawing.value = true;
   resumeDraw();
 });
 
 onBeforeUnmount(() => {
-  // 停止绘制循环
   isKeepDrawing.value = false;
   pauseDraw();
 });

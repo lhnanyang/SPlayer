@@ -18,6 +18,13 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">下一首歌曲预载</n-text>
+          <n-text class="tip" :depth="3">提前预加载下一首歌曲的播放地址，提升切换速度</n-text>
+        </div>
+        <n-switch v-model:value="settingStore.useNextPrefetch" class="set" :round="false" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">记忆上次播放位置</n-text>
           <n-text class="tip" :depth="3">程序启动时恢复上次播放位置</n-text>
         </div>
@@ -228,7 +235,7 @@
         <div class="label">
           <n-text class="name">音乐频谱</n-text>
           <n-text class="tip" :depth="3">
-            开启音乐频谱会影响性能或音频输出切换等功能，如遇问题请关闭
+            开启音乐频谱会影响性能或增加内存占用，如遇问题请关闭
           </n-text>
         </div>
         <n-switch
@@ -342,51 +349,53 @@ const getOutputDevices = async () => {
 
 // 切换输出设备
 const playDeviceChange = (deviceId: string, option: SelectOption) => {
-  if (settingStore.showSpectrums) {
-    window.$dialog.warning({
-      title: "音频通道占用",
-      content:
-        "由于系统限制，切换音频输出设备会导致音乐频谱失效，将会关闭音乐频谱，并将于热重载后生效（ 请点击右上角的设置菜单中的热重载按钮 ），是否继续？",
-      positiveText: "继续",
-      negativeText: "取消",
-      closeOnEsc: false,
-      closable: false,
-      maskClosable: false,
-      autoFocus: false,
-      onPositiveClick: () => {
-        showSpectrums.value = false;
-        settingStore.showSpectrums = false;
-        player.toggleOutputDevice(deviceId);
-        window.$message.success(`已切换输出设备为 ${option.label}`);
-      },
-      onNegativeClick: () => {
-        settingStore.playDevice = "default";
-      },
-    });
-  } else {
-    player.toggleOutputDevice(deviceId);
-    window.$message.success(`已切换输出设备为 ${option.label}`);
-  }
+  // if (settingStore.showSpectrums) {
+  //   window.$dialog.warning({
+  //     title: "音频通道占用",
+  //     content:
+  //       "由于系统限制，切换音频输出设备会导致音乐频谱失效，将会关闭音乐频谱，并将于热重载后生效（ 请点击右上角的设置菜单中的热重载按钮 ），是否继续？",
+  //     positiveText: "继续",
+  //     negativeText: "取消",
+  //     closeOnEsc: false,
+  //     closable: false,
+  //     maskClosable: false,
+  //     autoFocus: false,
+  //     onPositiveClick: () => {
+  //       showSpectrums.value = false;
+  //       settingStore.showSpectrums = false;
+  //       player.toggleOutputDevice(deviceId);
+  //       window.$message.success(`已切换输出设备为 ${option.label}`);
+  //     },
+  //     onNegativeClick: () => {
+  //       settingStore.playDevice = "default";
+  //     },
+  //   });
+  // } else {
+  //   player.toggleOutputDevice(deviceId);
+  //   window.$message.success(`已切换输出设备为 ${option.label}`);
+  // }
+  player.toggleOutputDevice(deviceId);
+  window.$message.success(`已切换输出设备为 ${option.label}`);
 };
 
 // 显示音乐频谱更改
 const showSpectrumsChange = (value: boolean) => {
   if (value) {
-    if (settingStore.playDevice !== "default") {
-      window.$dialog.warning({
-        title: "音频通道占用",
-        content: "开启音乐频谱会导致自定义音频输出设备失效，将会恢复默认输出设备，是否继续开启？",
-        positiveText: "开启",
-        negativeText: "取消",
-        onPositiveClick: () => {
-          showSpectrums.value = true;
-          settingStore.showSpectrums = true;
-          settingStore.playDevice = "default";
-          player.toggleOutputDevice("default");
-        },
-      });
-      return;
-    }
+    // if (settingStore.playDevice !== "default") {
+    //   window.$dialog.warning({
+    //     title: "音频通道占用",
+    //     content: "开启音乐频谱会导致自定义音频输出设备失效，将会恢复默认输出设备，是否继续开启？",
+    //     positiveText: "开启",
+    //     negativeText: "取消",
+    //     onPositiveClick: () => {
+    //       showSpectrums.value = true;
+    //       settingStore.showSpectrums = true;
+    //       settingStore.playDevice = "default";
+    //       player.toggleOutputDevice("default");
+    //     },
+    //   });
+    //   return;
+    // }
     showSpectrums.value = true;
     settingStore.showSpectrums = true;
   } else {

@@ -8,7 +8,6 @@
           cursor: statusStore.playerMetaShow || isShowComment ? 'auto' : 'none',
         }"
         :class="['full-player', { 'show-comment': isShowComment }]"
-        @click="onPlayerClick"
         @mouseleave="playerLeave"
       >
         <!-- 背景 -->
@@ -39,14 +38,8 @@
             ]"
             @mousemove="playerMove"
           >
-
             <Transition name="zoom">
-              <div
-                v-if="!pureLyricMode"
-                v-show="!isMobile"
-                :key="musicStore.playSong.id"
-                class="content-left"
-              >
+              <div v-if="!pureLyricMode" :key="musicStore.playSong.id" class="content-left">
                 <!-- 封面 -->
                 <PlayerCover />
                 <!-- 数据 -->
@@ -54,20 +47,20 @@
               </div>
             </Transition>
             <!-- 歌词 -->
-            <div
-              v-show="!isMobile || true"
-              class="content-right"
-            >
+            <div class="content-right">
               <!-- 数据 -->
               <PlayerData
-                v-if="(statusStore.pureLyricMode && musicStore.isHasLrc) || isMobile"
-                :center="statusStore.pureLyricMode || isMobile"
+                v-if="statusStore.pureLyricMode && musicStore.isHasLrc"
+                :center="statusStore.pureLyricMode"
                 :theme="statusStore.mainColor"
                 :light="pureLyricMode"
               />
               <!-- 歌词 -->
-              <MainAMLyric v-if="settingStore.useAMLyrics" />
-              <MainLyric v-else />
+              <MainAMLyric
+                v-if="settingStore.useAMLyrics"
+                :key="`am-lyric-${musicStore.playSong.id}`"
+              />
+              <MainLyric v-else :key="`lyric-${musicStore.playSong.id}`" />
             </div>
           </div>
         </Transition>
@@ -91,13 +84,11 @@
 
 <script setup lang="ts">
 import { useStatusStore, useMusicStore, useSettingStore } from "@/stores";
-import { isElectron, isMobile } from "@/utils/env";
+import { isElectron } from "@/utils/env";
 
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
-
-
 
 // 是否显示评论
 const isShowComment = computed<boolean>(
@@ -119,7 +110,7 @@ const pureLyricMode = computed<boolean>(
 );
 
 // 主内容 key
-const playerContentKey = computed(() => `${statusStore.pureLyricMode}`);
+const playerContentKey = computed(() => `${musicStore.playSong.id}-${statusStore.pureLyricMode}`);
 
 // 数据是否居中
 const playerDataCenter = computed<boolean>(
@@ -153,8 +144,7 @@ const {
 const playerMove = useThrottleFn(
   () => {
     statusStore.playerMetaShow = true;
-    // Mobile: Always visible, do not start hide timer
-    if (!isPending.value && !isMobile) startShow();
+    if (!isPending.value) startShow();
   },
   300,
   false,
@@ -172,18 +162,7 @@ const playerLeave = () => {
   stopShow();
 };
 
-// 点击播放器 (移动端显示控制)
-const onPlayerClick = () => {
-  if (isMobile && !statusStore.playerMetaShow) {
-    statusStore.playerMetaShow = true;
-  }
-};
-
 onMounted(() => {
-  // Mobile: Always show controls
-  if (isMobile) {
-    statusStore.playerMetaShow = true;
-  }
   // 阻止息屏
   if (isElectron && settingStore.preventSleep) {
     window.electron.ipcRenderer.send("prevent-sleep", true);
@@ -255,9 +234,6 @@ onBeforeUnmount(() => {
       transition:
         opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
         transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-      @media (max-width: 768px) {
-        display: none;
-      }
     }
     .content-right {
       position: absolute;
@@ -270,12 +246,6 @@ onBeforeUnmount(() => {
       flex-direction: column;
       transition: opacity 0.3s;
       transition-delay: 0.5s;
-      @media (max-width: 768px) {
-        width: 100%;
-        max-width: 100%;
-        left: 0;
-        right: auto;
-      }
       .player-data {
         margin-top: 0;
         margin-bottom: 26px;

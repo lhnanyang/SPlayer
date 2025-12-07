@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { keywords, regexes } from "@/assets/data/exclude";
 import { SongUnlockServer } from "@/utils/songManager";
+import type { SongLevelType } from "@/types/main";
 
 export interface SettingState {
   /** 明暗模式 */
@@ -66,14 +67,26 @@ export interface SettingState {
   lyricsScrollPosition: "start" | "center";
   /** 下载路径 */
   downloadPath: string;
+  /** 音乐命名格式 */
+  fileNameFormat: "title" | "artist-title" | "title-artist";
+  /** 文件智能分类 */
+  folderStrategy: "none" | "artist" | "artist-album";
   /** 下载元信息 */
   downloadMeta: boolean;
   /** 下载封面 */
   downloadCover: boolean;
   /** 下载歌词 */
   downloadLyric: boolean;
+  /** 下载歌词翻译 */
+  downloadLyricTranslation: boolean;
+  /** 下载歌词音译 */
+  downloadLyricRomaji: boolean;
+  /** 模拟播放下载 */
+  usePlaybackForDownload: boolean;
   /** 保存元信息文件 */
   saveMetaFile: boolean;
+  /** 默认下载音质（弹窗默认选项） */
+  downloadSongLevel: SongLevelType;
   /** 代理协议 */
   proxyProtocol: "off" | "http" | "https";
   /** 代理地址 */
@@ -94,6 +107,8 @@ export interface SettingState {
   playDevice: "default" | string;
   /** 自动播放 */
   autoPlay: boolean;
+  /** 预载下一首 */
+  useNextPrefetch: boolean;
   /** 渐入渐出 */
   songVolumeFade: boolean;
   /** 渐入渐出时间 */
@@ -136,6 +151,8 @@ export interface SettingState {
   useAMSpring: boolean;
   /** 是否启用在线 TTML 歌词 */
   enableTTMLLyric: boolean;
+  /** AMLL DB 服务地址 */
+  amllDbServer: string;
   /** 菜单显示封面 */
   menuShowCover: boolean;
   /** 菜单展开项 */
@@ -192,6 +209,8 @@ export interface SettingState {
   hideLike: boolean;
   /** 隐藏我的云盘 */
   hideCloud: boolean;
+  /** 隐藏下载管理 */
+  hideDownload: boolean;
   /** 隐藏本地歌曲 */
   hideLocal: boolean;
   /** 隐藏最近播放 */
@@ -208,6 +227,17 @@ export interface SettingState {
   appLaunchCount: number;
   /** 隐藏 Star 弹窗 */
   hideStarPopup: boolean;
+  /** 首页栏目顺序和显示配置 */
+  homePageSections: Array<{
+    key: "playlist" | "radar" | "artist" | "video" | "radio" | "album";
+    name: string;
+    visible: boolean;
+    order: number;
+  }>;
+  /** 自定义协议注册 **/
+  registryProtocol: {
+    orpheus: boolean;
+  };
 }
 
 export const useSettingStore = defineStore("setting", {
@@ -235,6 +265,7 @@ export const useSettingStore = defineStore("setting", {
     songLevel: "exhigh",
     playDevice: "default",
     autoPlay: false,
+    useNextPrefetch: true,
     songVolumeFade: true,
     songVolumeFadeTime: 300,
     useSongUnlock: true,
@@ -263,6 +294,7 @@ export const useSettingStore = defineStore("setting", {
     useAMLyrics: false,
     useAMSpring: false,
     enableTTMLLyric: true,
+    amllDbServer: "https://amll-ttml-db.stevexmh.net/ncm/%s",
     showYrc: true,
     showYrcAnimation: true,
     showYrcLongEffect: true,
@@ -283,10 +315,16 @@ export const useSettingStore = defineStore("setting", {
     localSeparators: ["/", "&"],
     showLocalCover: true,
     downloadPath: "",
+    fileNameFormat: "title-artist",
+    folderStrategy: "none",
     downloadMeta: true,
     downloadCover: true,
     downloadLyric: true,
+    downloadLyricTranslation: true,
+    downloadLyricRomaji: false,
+    usePlaybackForDownload: false,
     saveMetaFile: false,
+    downloadSongLevel: "h",
     proxyProtocol: "off",
     proxyServe: "127.0.0.1",
     proxyPort: 80,
@@ -301,6 +339,7 @@ export const useSettingStore = defineStore("setting", {
     hideRadioHot: false,
     hideLike: false,
     hideCloud: false,
+    hideDownload: false,
     hideLocal: false,
     hideHistory: false,
     hideUserPlaylists: false,
@@ -308,7 +347,18 @@ export const useSettingStore = defineStore("setting", {
     hideHeartbeatMode: false,
     enableSearchKeyword: true,
     appLaunchCount: 0,
-    hideStarPopup: false,
+    hideStarPopup: true,
+    homePageSections: [
+      { key: "playlist", name: "专属歌单", visible: true, order: 0 },
+      { key: "radar", name: "雷达歌单", visible: true, order: 1 },
+      { key: "artist", name: "歌手推荐", visible: true, order: 2 },
+      { key: "video", name: "推荐 MV", visible: true, order: 3 },
+      { key: "radio", name: "推荐播客", visible: true, order: 4 },
+      { key: "album", name: "新碟上架", visible: true, order: 5 },
+    ],
+    registryProtocol: {
+      orpheus: false,
+    },
   }),
   getters: {
     /**

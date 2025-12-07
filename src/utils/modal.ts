@@ -1,5 +1,6 @@
 import { h } from "vue";
 import type { CoverType, UpdateInfoType, SettingType, SongType } from "@/types/main";
+import { NScrollbar } from "naive-ui";
 import { isLogin } from "./auth";
 import { isArray, isFunction } from "lodash-es";
 import { useDataStore } from "@/stores";
@@ -13,7 +14,7 @@ import BatchList from "@/components/Modal/BatchList.vue";
 import CloudMatch from "@/components/Modal/CloudMatch.vue";
 import CreatePlaylist from "@/components/Modal/CreatePlaylist.vue";
 import UpdatePlaylist from "@/components/Modal/UpdatePlaylist.vue";
-import DownloadSong from "@/components/Modal/DownloadSong.vue";
+import DownloadModal from "@/components/Modal/DownloadModal.vue";
 import MainSetting from "@/components/Setting/MainSetting.vue";
 import UpdateApp from "@/components/Modal/UpdateApp.vue";
 import ExcludeLyrics from "@/components/Modal/ExcludeLyrics.vue";
@@ -22,7 +23,8 @@ import AutoClose from "@/components/Modal/AutoClose.vue";
 import Equalizer from "@/components/Modal/Equalizer.vue";
 import SongUnlockManager from "@/components/Modal/SongUnlockManager.vue";
 import SidebarHideManager from "@/components/Modal/SidebarHideManager.vue";
-import { NScrollbar } from "naive-ui";
+import HomePageSectionManager from "@/components/Modal/HomePageSectionManager.vue";
+import CopyLyrics from "@/components/Modal/CopyLyrics.vue";
 
 // 用户协议
 export const openUserAgreement = () => {
@@ -207,7 +209,26 @@ export const openDownloadSong = (song: SongType) => {
     style: { width: "600px" },
     title: "下载歌曲",
     content: () => {
-      return h(DownloadSong, { id: song.id, onClose: () => modal.destroy() });
+      return h(DownloadModal, { songId: song.id, onClose: () => modal.destroy() });
+    },
+  });
+};
+
+// 批量下载歌曲
+export const openDownloadSongs = (songs: SongType[]): void => {
+  if (!isLogin()) return openUserLogin();
+  if (!songs || songs.length === 0) {
+    window.$message.warning("请选择要下载的歌曲");
+    return;
+  }
+  const modal = window.$modal.create({
+    preset: "card",
+    transformOrigin: "center",
+    autoFocus: false,
+    style: { width: "600px" },
+    title: "批量下载",
+    content: () => {
+      return h(DownloadModal, { songs, onClose: () => modal.destroy() });
     },
   });
 };
@@ -346,6 +367,36 @@ export const openSidebarHideManager = () => {
     title: "侧边栏隐藏管理",
     content: () => {
       return h(SidebarHideManager);
+    },
+  });
+};
+
+/** 打开首页栏目配置弹窗 */
+export const openHomePageSectionManager = () => {
+  window.$modal.create({
+    preset: "card",
+    transformOrigin: "center",
+    autoFocus: false,
+    style: { width: "500px" },
+    title: "首页栏目配置",
+    content: () => {
+      return h(HomePageSectionManager);
+    },
+  });
+};
+
+/** 打开复制歌词弹窗 */
+export const openCopyLyrics = () => {
+  const modal = window.$modal.create({
+    preset: "card",
+    transformOrigin: "center",
+    autoFocus: false,
+    style: { width: "500px" },
+    title: "复制歌词",
+    content: () => {
+      return h(CopyLyrics, {
+        onClose: () => modal.destroy(),
+      });
     },
   });
 };

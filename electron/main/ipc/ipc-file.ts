@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "path";
-import { access, readdir, readFile, stat, unlink, writeFile } from "fs/promises";
+import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "fs/promises";
 import { parseFile } from "music-metadata";
 import { getFileID, getFileMD5, metaDataLyricsArrayToLrc } from "../utils/helper";
-import { File, Picture, Id3v2Settings } from "node-taglib-sharp";
+import { File, Picture, Id3v2Settings, TagTypes } from "node-taglib-sharp";
 import { ipcLog } from "../logger";
 import { download } from "electron-dl";
 import { Options as GlobOptions } from "fast-glob/out/settings";
@@ -48,8 +48,21 @@ const initFileIpc = (): void => {
         return [];
       }
       console.info(`📂 Fetching music files from: ${filePath}`);
+      // 音乐文件扩展名
+      const musicExtensions = [
+        "mp3",
+        "wav",
+        "flac",
+        "aac",
+        "webm",
+        "m4a",
+        "mp4",
+        "ogg",
+        "aiff",
+        "aif",
+      ];
       // 查找指定目录下的所有音乐文件
-      const musicFiles = await FastGlob("**/*.{mp3,wav,flac,aac,webm}", globOpt(filePath));
+      const musicFiles = await FastGlob(`**/*.{${musicExtensions.join(",")}}`, globOpt(filePath));
       // 解析元信息（使用 allSettled 防止单个文件失败影响整体）
       const metadataPromises = musicFiles.map(async (file) => {
         const fullPath = join(dirPath, file);
@@ -377,16 +390,17 @@ const initFileIpc = (): void => {
         saveMetaFile?: boolean;
         lyric?: string;
         songData?: any;
+        skipIfExist?: boolean;
       } = {
           fileName: "未知文件名",
           fileType: "mp3",
           path: app.getPath("downloads"),
         },
-    ): Promise<boolean> => {
+    ): Promise<{ status: "success" | "skipped" | "error"; message?: string }> => {
       try {
         // 获取窗口
         const win = BrowserWindow.fromWebContents(event.sender);
-        if (!win) return false;
+        if (!win) return { status: "error", message: "Window not found" };
         // 获取配置
         const {
           fileName,
@@ -398,34 +412,61 @@ const initFileIpc = (): void => {
           downloadLyric,
           saveMetaFile,
           songData,
+          skipIfExist,
         } = options;
         // 规范化路径
         const downloadPath = resolve(path);
-        // 检查文件夹是否存在
+        // 检查文件夹是否存在，不存在则自动递归创建
         try {
           await access(downloadPath);
         } catch {
-          throw new Error("❌ Folder not found");
+          await mkdir(downloadPath, { recursive: true });
         }
+
+        // 检查文件是否存在
+        if (skipIfExist) {
+          const filePath = join(downloadPath, `${fileName}.${fileType}`);
+          try {
+            await access(filePath);
+            return { status: "skipped", message: "文件已存在" };
+          } catch {
+            // 文件不存在，继续下载
+          }
+        }
+
         // 下载文件
         const songDownload = await download(win, url, {
           directory: downloadPath,
           filename: `${fileName}.${fileType}`,
+          showProgressBar: false,
+          onProgress: (progress) => {
+            win.webContents.send("download-progress", { ...progress, id: songData?.id });
+          },
         });
-        if (!downloadMeta || !songData?.cover) return true;
+        if (!downloadMeta || !songData?.cover) return { status: "success" };
         // 下载封面
         const coverUrl = songData?.coverSize?.l || songData.cover;
         const coverDownload = await download(win, coverUrl, {
           directory: downloadPath,
           filename: `${fileName}.jpg`,
+          showProgressBar: false,
         });
         // 读取歌曲文件
-        const songFile = File.createFromPath(songDownload.getSavePath());
+        let songFile = File.createFromPath(songDownload.getSavePath());
+        // 清除原有标签，防止脏数据（如模拟播放下载时的乱码歌词）
+        songFile.removeTags(TagTypes.AllTags);
+        songFile.save();
+        songFile.dispose();
+
+        // 重新读取文件以写入新标签
+        songFile = File.createFromPath(songDownload.getSavePath());
         // 生成图片信息
         const songCover = Picture.fromPath(coverDownload.getSavePath());
+
         // 保存修改后的元数据
         Id3v2Settings.forceDefaultVersion = true;
         Id3v2Settings.defaultVersion = 3;
+
         songFile.tag.title = songData?.name || "未知曲目";
         songFile.tag.album = songData?.album?.name || "未知专辑";
         songFile.tag.performers = songData?.artists?.map((ar: any) => ar.name) || ["未知艺术家"];
@@ -442,10 +483,13 @@ const initFileIpc = (): void => {
         }
         // 是否删除封面
         if (!saveMetaFile || !downloadCover) await unlink(coverDownload.getSavePath());
-        return true;
+        return { status: "success" };
       } catch (error) {
         ipcLog.error("❌ Error downloading file:", error);
-        return false;
+        return {
+          status: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
       }
     },
   );

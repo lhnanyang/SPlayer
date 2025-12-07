@@ -174,7 +174,7 @@
 import type { CoverType, SongType } from "@/types/main";
 import type { DropdownOption, MessageReactive } from "naive-ui";
 import { formatCoverList, formatSongsList } from "@/utils/format";
-import { coverLoaded, fuzzySearch, renderIcon } from "@/utils/helper";
+import { coverLoaded, fuzzySearch, renderIcon, copyData } from "@/utils/helper";
 import { renderToolbar } from "@/utils/meta";
 import { debounce } from "lodash-es";
 import { useDataStore, useStatusStore } from "@/stores";
@@ -200,6 +200,9 @@ const searchData = ref<SongType[]>([]);
 // 电台 ID
 const oldRadioId = ref<number>(0);
 const radioId = computed<number>(() => Number(router.currentRoute.value.query.id as string));
+
+// 当前正在请求的播客 ID，用于防止竞态条件
+const currentRequestId = ref<number>(0);
 
 // 加载提示
 const loading = ref<boolean>(true);
@@ -240,6 +243,15 @@ const moreOptions = computed<DropdownOption[]>(() => [
     icon: renderIcon("Refresh"),
   },
   {
+    label: "复制分享链接",
+    key: "copy",
+    props: {
+      onClick: () =>
+        copyData(`https://music.163.com/#/djradio?id=${radioId.value}`, "已复制分享链接到剪贴板"),
+    },
+    icon: renderIcon("Share"),
+  },
+  {
     label: "打开源页面",
     key: "open",
     props: {
@@ -254,6 +266,8 @@ const moreOptions = computed<DropdownOption[]>(() => [
 // 获取播客基础信息
 const getRadioDetail = async (id: number) => {
   if (!id) return;
+  // 设置当前请求的播客 ID，用于防止竞态条件
+  currentRequestId.value = id;
   // 设置加载状态
   loading.value = true;
   // 清空数据
@@ -261,6 +275,7 @@ const getRadioDetail = async (id: number) => {
   // 获取播客详情
   radioDetailData.value = null;
   const detail = await radioDetail(id);
+  if (currentRequestId.value !== id) return;
   radioDetailData.value = formatCoverList(detail.data)[0];
   // 获取全部节目
   await getRadioAllProgram(id, radioDetailData.value?.count as number);
@@ -277,12 +292,24 @@ const getRadioAllProgram = async (id: number, count: number) => {
   let offset: number = 0;
   const limit: number = 500;
   do {
+    if (currentRequestId.value !== id) {
+      loadingMsgShow(false);
+      return;
+    }
     const result = await radioAllProgram(id, limit, offset);
+    if (currentRequestId.value !== id) {
+      loadingMsgShow(false);
+      return;
+    }
     const songData = formatSongsList(result.programs);
     radioListData.value = radioListData.value.concat(songData);
     // 更新数据
     offset += limit;
-  } while (offset < count && isPlaylistPage.value);
+  } while (offset < count && isPlaylistPage.value && currentRequestId.value === id);
+  if (currentRequestId.value !== id) {
+    loadingMsgShow(false);
+    return;
+  }
   // 关闭加载
   loadingMsgShow(false);
 };

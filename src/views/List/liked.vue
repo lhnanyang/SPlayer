@@ -111,7 +111,7 @@
                 </n-button>
               </n-dropdown>
             </n-flex>
-            <n-flex class="right">
+            <n-flex class="right" align="center">
               <!-- 模糊搜索 -->
               <n-input
                 v-if="playlistData?.length"
@@ -169,7 +169,7 @@ import type { DropdownOption, MessageReactive } from "naive-ui";
 import { songDetail } from "@/api/song";
 import { playlistDetail, playlistAllSongs } from "@/api/playlist";
 import { formatCoverList, formatSongsList } from "@/utils/format";
-import { coverLoaded, formatNumber, fuzzySearch, renderIcon } from "@/utils/helper";
+import { coverLoaded, formatNumber, fuzzySearch, renderIcon, copyData } from "@/utils/helper";
 import { renderToolbar } from "@/utils/meta";
 import { debounce, isObject, uniqBy } from "lodash-es";
 import { useDataStore, useStatusStore } from "@/stores";
@@ -196,6 +196,9 @@ const searchData = ref<SongType[]>([]);
 
 // 歌单 ID
 const playlistId = computed<number>(() => dataStore.userLikeData.playlists?.[0]?.id);
+
+// 当前正在请求的歌单 ID，用于防止竞态条件
+const currentRequestId = ref<number>(0);
 
 // 加载提示
 const loading = ref<boolean>(true);
@@ -241,6 +244,18 @@ const moreOptions = computed<DropdownOption[]>(() => [
     icon: renderIcon("Batch"),
   },
   {
+    label: "复制分享链接",
+    key: "copy",
+    props: {
+      onClick: () =>
+        copyData(
+          `https://music.163.com/#/playlist?id=${playlistId.value}`,
+          "已复制分享链接到剪贴板",
+        ),
+    },
+    icon: renderIcon("Share"),
+  },
+  {
     label: "打开源页面",
     key: "open",
     props: {
@@ -264,6 +279,8 @@ const getPlaylistDetail = async (
   },
 ) => {
   if (!id) return;
+  // 设置当前请求的歌单 ID，用于防止竞态条件
+  currentRequestId.value = id;
   // 设置加载状态
   loading.value = true;
   const { getList, refresh } = options;
@@ -289,6 +306,8 @@ const getPlaylistData = async (id: number, getList: boolean, refresh: boolean) =
   loadLikedCache();
   // 获取歌单详情
   const detail = await playlistDetail(id);
+  // 检查是否仍然是当前请求的歌单
+  if (currentRequestId.value !== id) return;
   playlistDetailData.value = formatCoverList(detail.playlist)[0];
   // 不需要获取列表或无歌曲
   if (!getList || playlistDetailData.value.count === 0) {
@@ -299,11 +318,15 @@ const getPlaylistData = async (id: number, getList: boolean, refresh: boolean) =
   if (isLogin() === 1 && (playlistDetailData.value?.count as number) < 800) {
     const ids: number[] = detail.privileges.map((song: any) => song.id as number);
     const result = await songDetail(ids);
+    // 检查是否仍然是当前请求的歌单
+    if (currentRequestId.value !== id) return;
     // 直接批量详情返回时也进行一次按 id 去重
     playlistData.value = uniqBy(formatSongsList(result.songs), "id");
   } else {
     await getPlaylistAllSongs(id, playlistDetailData.value.count || 0, refresh);
   }
+  // 检查是否仍然是当前请求的歌单
+  if (currentRequestId.value !== id) return;
   // 更新我喜欢
   dataStore.setLikeSongsList(playlistDetailData.value, playlistData.value);
   loading.value = false;
@@ -335,14 +358,29 @@ const getPlaylistAllSongs = async (
   const limit: number = 500;
   const listData: SongType[] = [];
   do {
+    // 检查是否仍然是当前请求的歌单
+    if (currentRequestId.value !== id) {
+      loadingMsgShow(false);
+      return;
+    }
     const result = await playlistAllSongs(id, limit, offset);
+    // 再次检查是否仍然是当前请求的歌单（请求完成后）
+    if (currentRequestId.value !== id) {
+      loadingMsgShow(false);
+      return;
+    }
     const songData = formatSongsList(result.songs);
     listData.push(...songData);
     // 非刷新模式下，增量拼接时进行去重，避免与缓存或上一页数据重复
     if (!refresh) playlistData.value = uniqBy([...playlistData.value, ...songData], "id");
     // 更新数据
     offset += limit;
-  } while (offset < count && isLikedPage.value);
+  } while (offset < count && isLikedPage.value && currentRequestId.value === id);
+  // 最终检查是否仍然是当前请求的歌单
+  if (currentRequestId.value !== id) {
+    loadingMsgShow(false);
+    return;
+  }
   // 刷新模式下，统一以最终聚合数据为准，并进行去重
   if (refresh) playlistData.value = uniqBy(listData, "id");
   // 关闭加载

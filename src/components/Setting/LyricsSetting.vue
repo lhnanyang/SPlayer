@@ -260,6 +260,17 @@
         </div>
         <n-switch v-model:value="settingStore.enableTTMLLyric" class="set" :round="false" />
       </n-card>
+      <n-collapse-transition :show="settingStore.enableTTMLLyric">
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">AMLL TTML DB 地址</n-text>
+            <n-text class="tip" :depth="3">
+              AMLL TTML DB 地址，请确保地址正确，否则将导致歌词获取失败
+            </n-text>
+          </div>
+          <n-button type="primary" strong secondary @click="changeAMLLDBServer"> 配置 </n-button>
+        </n-card>
+      </n-collapse-transition>
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">启用歌词排除</n-text>
@@ -433,7 +444,7 @@
           />
         </n-flex>
       </n-card>
-      <!-- <n-card class="set-item">
+      <n-card class="set-item">
         <div class="label">
           <n-text class="name">显示逐字歌词</n-text>
           <n-text class="tip" :depth="3">是否显示桌面歌词逐字效果</n-text>
@@ -444,7 +455,7 @@
           class="set"
           @update:value="saveDesktopLyricConfig"
         />
-      </n-card> -->
+      </n-card>
       <n-card class="set-item">
         <div class="label">
           <n-text class="name">显示翻译</n-text>
@@ -528,6 +539,30 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">文本背景遮罩</n-text>
+          <n-text class="tip" :depth="3">防止在某些界面看不清文本</n-text>
+        </div>
+        <n-switch
+          v-model:value="desktopLyricConfig.textBackgroundMask"
+          :round="false"
+          class="set"
+          @update:value="saveDesktopLyricConfig"
+        />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">始终展示播放信息</n-text>
+          <n-text class="tip" :depth="3">是否始终展示当前歌曲名及歌手</n-text>
+        </div>
+        <n-switch
+          v-model:value="desktopLyricConfig.alwaysShowPlayInfo"
+          :round="false"
+          class="set"
+          @update:value="saveDesktopLyricConfig"
+        />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">恢复默认配置</n-text>
           <n-text class="tip" :depth="3">恢复默认桌面歌词配置</n-text>
         </div>
@@ -538,8 +573,10 @@
 </template>
 
 <script setup lang="ts">
+import { NFlex, NInput, NText } from "naive-ui";
 import { useSettingStore, useStatusStore } from "@/stores";
 import { cloneDeep, isEqual } from "lodash-es";
+import { isValidURL } from "@/utils/validate";
 import { isElectron } from "@/utils/env";
 import { openLyricExclude } from "@/utils/modal";
 import { LyricConfig } from "@/types/desktop-lyric";
@@ -553,6 +590,9 @@ const settingStore = useSettingStore();
 
 // 全部字体
 const allFontsData = ref<SelectOption[]>([]);
+
+// AMLL TTML DB 地址
+const amllDbServer = ref("https://amll-ttml-db.stevexmh.net/ncm/%s");
 
 // 桌面歌词配置
 const desktopLyricConfig = reactive<LyricConfig>({ ...defaultDesktopLyricConfig });
@@ -637,10 +677,59 @@ const getAllSystemFonts = async () => {
   });
 };
 
-onMounted(() => {
+// 修改 AMLL DB 服务地址
+const changeAMLLDBServer = () => {
+  window.$modal.create({
+    preset: "dialog",
+    title: "修改 AMLL DB 地址",
+    content: () =>
+      h(
+        NFlex,
+        { vertical: true },
+        {
+          default: () => [
+            h(
+              NText,
+              { depth: 3, type: "warning" },
+              { default: () => "如果你不清楚这里是做什么的，请不要修改" },
+            ),
+            h(NText, null, { default: () => "请确保地址正确，并且包含 %s（ 用于替换歌曲 ID ）" }),
+            h(NInput, {
+              value: amllDbServer.value,
+              onUpdateValue: (val) => (amllDbServer.value = val),
+              placeholder: "请输入 AMLL TTML DB 地址",
+            }),
+          ],
+        },
+      ),
+    positiveText: "确认",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      const urlValue = amllDbServer.value.trim();
+      // 验证 URL 格式和 %s
+      if (isValidURL(urlValue) && urlValue.includes("%s")) {
+        await window.api.store.set("amllDbServer", urlValue);
+        settingStore.amllDbServer = urlValue;
+        window.$message.success("AMLL TTML DB 地址已更新");
+        return true;
+      } else {
+        window.$message.error("请输入正确的网址格式，需包含 %s");
+        return false;
+      }
+    },
+  });
+};
+
+onMounted(async () => {
   if (isElectron) {
     getDesktopLyricConfig();
     getAllSystemFonts();
+    // 恢复地址
+    const server = await window.api.store.get("amllDbServer");
+    if (server) {
+      amllDbServer.value = server;
+      settingStore.amllDbServer = server;
+    }
   }
 });
 </script>

@@ -107,12 +107,14 @@
           <n-text class="name">侧边栏隐藏</n-text>
           <n-text class="tip" :depth="3">配置需要在侧边栏隐藏的菜单项</n-text>
         </div>
-        <n-button
-          type="primary"
-          strong
-          secondary
-          @click="openSidebarHideManager"
-        >
+        <n-button type="primary" strong secondary @click="openSidebarHideManager"> 配置 </n-button>
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">首页栏目配置</n-text>
+          <n-text class="tip" :depth="3">调整首页各栏目的显示顺序或隐藏不需要的栏目</n-text>
+        </div>
+        <n-button type="primary" strong secondary @click="openHomePageSectionManager">
           配置
         </n-button>
       </n-card>
@@ -315,6 +317,15 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">通过 Orpheus 协议唤起本应用</n-text>
+          <n-text class="tip" :depth="3">
+            该协议通常用于官方网页端唤起官方客户端， 启用后可能导致官方客户端无法被唤起
+          </n-text>
+        </div>
+        <n-switch v-model:value="settingStore.registryProtocol.orpheus" class="set" :round="false" @update:value="orpheusChange" />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">自动检查更新</n-text>
           <n-text class="tip" :depth="3">在每次开启软件时自动检查更新</n-text>
         </div>
@@ -328,10 +339,11 @@
 import type { SelectOption } from "naive-ui";
 import { useDataStore, useMusicStore, useSettingStore, useStatusStore } from "@/stores";
 import { isDev, isElectron } from "@/utils/env";
-import { getCoverColor } from "@/utils/player-utils/song";
+import songManager from "@/utils/songManager";
 import { isEmpty } from "lodash-es";
 import themeColor from "@/assets/data/themeColor.json";
-import { openSidebarHideManager } from "@/utils/modal";
+import { openSidebarHideManager, openHomePageSectionManager } from "@/utils/modal";
+import { sendRegisterProtocol } from "@/utils/protocol";
 
 const dataStore = useDataStore();
 const musicStore = useMusicStore();
@@ -424,7 +436,7 @@ const modeChange = (val: boolean) => {
         localStorage.removeItem("data-store");
         localStorage.removeItem("music-store");
         // 重启
-        if (!isDev) window.electron.ipcRenderer.send("win-reload");
+        if (!isDev) window.electron.ipcRenderer.send("win-restart");
       },
       onNegativeClick: () => {
         useOnlineService.value = true;
@@ -436,7 +448,12 @@ const modeChange = (val: boolean) => {
 
 // 全局着色更改
 const themeGlobalColorChange = (val: boolean) => {
-  if (val) getCoverColor(musicStore.songCover);
+  if (val) songManager.getCoverColor(musicStore.songCover);
+};
+
+// 注册或取消注册协议
+const orpheusChange = async (isRegistry: boolean) => {
+  sendRegisterProtocol("orpheus", isRegistry)
 };
 
 onMounted(() => {

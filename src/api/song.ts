@@ -1,6 +1,7 @@
 import { isElectron } from "@/utils/env";
 import { songLevelData } from "@/utils/meta";
 import { SongUnlockServer } from "@/utils/songManager";
+import { useSettingStore } from "@/stores";
 import request from "@/utils/request";
 
 // 获取歌曲详情
@@ -76,7 +77,9 @@ export const songLyricTTML = async (id: number) => {
   if (isElectron) {
     return request({ url: "/lyric/ttml", params: { id, noCookie: true } });
   } else {
-    const url = `https://amll-ttml-db.stevexmh.net/ncm/${id}`;
+    const settingStore = useSettingStore();
+    const server = settingStore.amllDbServer || "https://amll-ttml-db.stevexmh.net/ncm/%s";
+    const url = server.replace("%s", String(id));
     try {
       const response = await fetch(url);
       if (response === null || response.status !== 200) {

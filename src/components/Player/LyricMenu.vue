@@ -1,5 +1,9 @@
 <template>
   <n-flex class="menu" justify="center" vertical>
+    <div class="menu-icon" @click="openCopyLyrics">
+      <SvgIcon name="Copy" />
+    </div>
+    <div class="divider" />
     <div class="menu-icon" @click="changeOffset(-500)">
       <SvgIcon name="Replay5" />
     </div>
@@ -18,7 +22,7 @@
 
 <script setup lang="ts">
 import { useMusicStore, useStatusStore } from "@/stores";
-import { openSetting } from "@/utils/modal";
+import { openSetting, openCopyLyrics } from "@/utils/modal";
 
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();

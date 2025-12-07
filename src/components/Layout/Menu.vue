@@ -3,13 +3,13 @@
   <n-menu
     ref="menuRef"
     v-model:value="menuActiveKey"
+    v-model:expanded-keys="settingStore.menuExpandedKeys"
     :class="{ cover: settingStore.menuShowCover }"
     :indent="0"
     :root-indent="26"
     :collapsed="statusStore.menuCollapsed"
     :collapsed-width="64"
     :collapsed-icon-size="22"
-    v-model:expanded-keys="settingStore.menuExpandedKeys"
     :options="menuOptions"
     :render-label="renderMenuLabel"
     @update:value="menuUpdate"
@@ -25,6 +25,7 @@ import {
   NButton,
   NEllipsis,
   NAvatar,
+  NBadge,
 } from "naive-ui";
 import type { CoverType } from "@/types/main";
 import { useStatusStore, useSettingStore, useDataStore, useMusicStore } from "@/stores";
@@ -131,6 +132,21 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           label: "我的云盘",
           show: isLogin() === 1 && !settingStore.hideCloud,
           icon: renderIcon("Cloud"),
+        },
+        {
+          key: "download",
+          label: () =>
+            h(
+              NBadge,
+              {
+                show: dataStore.downloadingSongs.length > 0,
+                value: dataStore.downloadingSongs.length,
+                offset: [22, 13],
+              },
+              () => "下载管理",
+            ),
+          show: isElectron && !settingStore.hideDownload,
+          icon: renderIcon("Download"),
         },
         {
           key: "local",
@@ -275,6 +291,13 @@ const menuUpdate = (key: string, item: MenuOption) => {
           name: "like-songs",
         });
         break;
+      // 下载管理
+      case "download":
+        router.push({
+          name:
+            dataStore.downloadingSongs.length > 0 ? "download-downloading" : "download-downloaded",
+        });
+        break;
       default:
         break;
     }
@@ -284,10 +307,22 @@ const menuUpdate = (key: string, item: MenuOption) => {
 // 选中菜单项
 const checkMenuItem = () => {
   // 当前路由名称
-  const routerName =
+  let routerName =
     (router.currentRoute.value.matched?.[0]?.name as string) ||
     (router.currentRoute.value?.name as string);
   if (!routerName) return;
+  // 处理本地歌曲子路由
+  if (routerName.startsWith("local-")) {
+    routerName = "local";
+  }
+  // 处理收藏子路由
+  if (routerName.startsWith("like-") && routerName !== "like-songs") {
+    routerName = "like";
+  }
+  // 处理下载子路由
+  if (routerName.startsWith("download-")) {
+    routerName = "download";
+  }
   // 显示菜单
   menuRef.value?.showOption(routerName);
   // 高亮菜单
