@@ -33,6 +33,13 @@ export const appName = app.getName() || "SPlayer";
 export const port = Number(import.meta.env["VITE_SERVER_PORT"] || 25884);
 
 /**
+ * 默认 AMLL TTML DB Server
+ * @returns string
+ */
+export const defaultAMLLDbServer =
+  "https://raw.githubusercontent.com/Steve-xmh/amll-ttml-db/refs/heads/main/ncm-lyrics/%s.ttml";
+
+/**
  * 主窗口加载地址
  * @returns string
  */

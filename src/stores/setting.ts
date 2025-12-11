@@ -2,23 +2,27 @@ import { defineStore } from "pinia";
 import { keywords, regexes } from "@/assets/data/exclude";
 import { SongUnlockServer } from "@/utils/songManager";
 import type { SongLevelType } from "@/types/main";
+import { defaultAMLLDbServer } from "@/utils/meta";
+import { CURRENT_SETTING_SCHEMA_VERSION, settingMigrations } from "./migrations/settingMigrations";
 
 export interface SettingState {
+  /** Schema 版本号（可选，用于数据迁移） */
+  schemaVersion?: number;
   /** 明暗模式 */
   themeMode: "light" | "dark" | "auto";
   /** 主题类别 */
   themeColorType:
-  | "default"
-  | "orange"
-  | "blue"
-  | "pink"
-  | "brown"
-  | "indigo"
-  | "green"
-  | "purple"
-  | "yellow"
-  | "teal"
-  | "custom";
+    | "default"
+    | "orange"
+    | "blue"
+    | "pink"
+    | "brown"
+    | "indigo"
+    | "green"
+    | "purple"
+    | "yellow"
+    | "teal"
+    | "custom";
   /** 主题自定义颜色 */
   themeCustomColor: string;
   /** 全局着色 */
@@ -95,14 +99,14 @@ export interface SettingState {
   proxyPort: number;
   /** 歌曲音质 */
   songLevel:
-  | "standard"
-  | "higher"
-  | "exhigh"
-  | "lossless"
-  | "hires"
-  | "jyeffect"
-  | "sky"
-  | "jymaster";
+    | "standard"
+    | "higher"
+    | "exhigh"
+    | "lossless"
+    | "hires"
+    | "jyeffect"
+    | "sky"
+    | "jymaster";
   /** 播放设备 */
   playDevice: "default" | string;
   /** 自动播放 */
@@ -129,6 +133,8 @@ export interface SettingState {
   playerBackgroundFps: number;
   /** 背景动画流动速度 */
   playerBackgroundFlowSpeed: number;
+  /** 播放器元素自动隐藏 */
+  autoHidePlayerMeta: boolean;
   /** 记忆最后进度 */
   memoryLastSeek: boolean;
   /** 显示播放列表数量 */
@@ -234,6 +240,8 @@ export interface SettingState {
     visible: boolean;
     order: number;
   }>;
+  /** 用户协议版本 */
+  userAgreementVersion: string;
   /** 自定义协议注册 **/
   registryProtocol: {
     orpheus: boolean;
@@ -242,6 +250,7 @@ export interface SettingState {
 
 export const useSettingStore = defineStore("setting", {
   state: (): SettingState => ({
+    schemaVersion: 0,
     themeMode: "auto",
     themeColorType: "default",
     themeCustomColor: "#fe7971",
@@ -280,6 +289,7 @@ export const useSettingStore = defineStore("setting", {
     playerBackgroundType: "blur",
     playerBackgroundFps: 30,
     playerBackgroundFlowSpeed: 4,
+    autoHidePlayerMeta: true,
     memoryLastSeek: true,
     showPlaylistCount: true,
     showSpectrums: false,
@@ -293,8 +303,8 @@ export const useSettingStore = defineStore("setting", {
     lyricFontBold: true,
     useAMLyrics: false,
     useAMSpring: false,
-    enableTTMLLyric: true,
-    amllDbServer: "https://amll-ttml-db.stevexmh.net/ncm/%s",
+    enableTTMLLyric: false,
+    amllDbServer: defaultAMLLDbServer,
     showYrc: true,
     showYrcAnimation: true,
     showYrcLongEffect: true,
@@ -356,6 +366,7 @@ export const useSettingStore = defineStore("setting", {
       { key: "radio", name: "推荐播客", visible: true, order: 4 },
       { key: "album", name: "新碟上架", visible: true, order: 5 },
     ],
+    userAgreementVersion: "",
     registryProtocol: {
       orpheus: false,
     },
@@ -370,6 +381,35 @@ export const useSettingStore = defineStore("setting", {
     },
   },
   actions: {
+    /**
+     * 检查并执行数据迁移
+     * 应在应用启动时调用
+     */
+    checkAndMigrate() {
+      const currentVersion = this.schemaVersion ?? 0;
+      const targetVersion = CURRENT_SETTING_SCHEMA_VERSION;
+
+      if (currentVersion !== targetVersion) {
+        console.log(`[Setting Migration] 检测到版本差异: ${currentVersion} -> ${targetVersion}`);
+        // 保存当前完整状态
+        const currentState = { ...this.$state } as Partial<SettingState>;
+        // 计算需要更新的字段（迁移返回的更新）
+        const updates: Partial<SettingState> = {};
+        // 按版本顺序执行迁移，收集所有更新
+        for (let version = currentVersion + 1; version <= targetVersion; version++) {
+          const migration = settingMigrations[version];
+          if (migration) {
+            const migrationUpdates = migration(currentState);
+            Object.assign(updates, migrationUpdates);
+          }
+        }
+        // 只 patch 需要更新的字段
+        this.$patch(updates);
+        // 统一设置版本号
+        this.schemaVersion = targetVersion;
+        console.log(`[Setting Migration] 迁移完成，已更新到版本 ${targetVersion}`);
+      }
+    },
     // 更换明暗模式
     setThemeMode(mode?: "auto" | "light" | "dark") {
       // 若未传入
@@ -386,11 +426,12 @@ export const useSettingStore = defineStore("setting", {
       }
       window.$message.info(
         `已切换至
-        ${this.themeMode === "auto"
-          ? "跟随系统"
-          : this.themeMode === "light"
-            ? "浅色模式"
-            : "深色模式"
+        ${
+          this.themeMode === "auto"
+            ? "跟随系统"
+            : this.themeMode === "light"
+              ? "浅色模式"
+              : "深色模式"
         }`,
         {
           showIcon: false,

@@ -13,7 +13,7 @@ import { personalFm, personalFmToTrash } from "@/api/rec";
 import songManager, { type NextPrefetchSong } from "./songManager";
 import { isElectron } from "./env";
 import lyricManager from "./lyricManager";
-import audioManager from "./audioManager";
+import audioManager, { AudioEventType } from "./audioManager";
 import blob from "./blob";
 
 /**
@@ -29,6 +29,8 @@ class Player {
   private nextPrefetch: NextPrefetchSong = null;
   /** 当前曲目重试信息（按歌曲维度计数） */
   private retryInfo: { songId: number; count: number } = { songId: 0, count: 0 };
+  /** 存储事件回调函数的引用，用于清理 */
+  private eventCallbacks: Map<AudioEventType, (e: Event) => void> = new Map();
   constructor() {
     // 初始化媒体会话
     this.initMediaSession();
@@ -36,11 +38,23 @@ class Player {
     this.bindAudioEvents();
   }
   /**
+   * 解绑 AudioManager 事件
+   */
+  private unbindAudioEvents() {
+    // 清理所有音频事件监听器
+    this.eventCallbacks.forEach((callback, event) => {
+      audioManager.off(event, callback);
+    });
+    this.eventCallbacks.clear();
+  }
+  /**
    * 绑定 AudioManager 事件
    */
   private bindAudioEvents() {
+    // 清理可能存在的旧事件监听器
+    this.unbindAudioEvents();
     // 播放
-    audioManager.on("play", () => {
+    const playCallback = () => {
       const statusStore = useStatusStore();
       const playSongData = songManager.getPlaySongData();
       const { name, artist } = songManager.getPlayerInfoObj() || {};
@@ -60,9 +74,11 @@ class Player {
         });
       }
       console.log("▶️ song play:", playSongData);
-    });
+    };
+    audioManager.on("play", playCallback);
+    this.eventCallbacks.set("play", playCallback);
     // 暂停
-    audioManager.on("pause", () => {
+    const pauseCallback = () => {
       const statusStore = useStatusStore();
       const playSongData = songManager.getPlaySongData();
       statusStore.playStatus = false;
@@ -72,9 +88,11 @@ class Player {
         window.electron.ipcRenderer.send("play-status-change", false);
       }
       console.log("⏸️ song pause:", playSongData);
-    });
+    };
+    audioManager.on("pause", pauseCallback);
+    this.eventCallbacks.set("pause", pauseCallback);
     // 结束
-    audioManager.on("ended", () => {
+    const endedCallback = () => {
       const statusStore = useStatusStore();
       const playSongData = songManager.getPlaySongData();
       console.log("⏹️ song end:", playSongData);
@@ -88,15 +106,24 @@ class Player {
         return;
       }
       this.nextOrPrev("next", true, true);
-    });
+    };
+    audioManager.on("ended", endedCallback);
+    this.eventCallbacks.set("ended", endedCallback);
     // 错误
-    audioManager.on("error", (e: Event) => {
+    const errorCallback = (e: Event) => {
       const playSongData = songManager.getPlaySongData();
       console.error("❌ song error:", playSongData, e);
-      this.handlePlaybackError();
-    });
+      // 提取错误码
+      let errCode: number | undefined;
+      if ("detail" in e && e.detail) {
+        errCode = (e.detail as { errorCode?: number }).errorCode;
+      }
+      this.handlePlaybackError(errCode);
+    };
+    audioManager.on("error", errorCallback);
+    this.eventCallbacks.set("error", errorCallback);
     // 进度更新
-    audioManager.on("timeupdate", () => {
+    const timeupdateCallback = () => {
       const musicStore = useMusicStore();
       const statusStore = useStatusStore();
       const settingStore = useSettingStore();
@@ -128,14 +155,18 @@ class Player {
           window.electron.ipcRenderer.send("set-bar", progress);
         }
       }
-    });
+    };
+    audioManager.on("timeupdate", timeupdateCallback);
+    this.eventCallbacks.set("timeupdate", timeupdateCallback);
     // 加载开始
-    audioManager.on("loadstart", () => {
+    const loadstartCallback = () => {
       const statusStore = useStatusStore();
       statusStore.playLoading = true;
-    });
+    };
+    audioManager.on("loadstart", loadstartCallback);
+    this.eventCallbacks.set("loadstart", loadstartCallback);
     // 可以播放
-    audioManager.on("canplay", () => {
+    const canplayCallback = () => {
       const statusStore = useStatusStore();
       statusStore.playLoading = false;
       // 恢复均衡器
@@ -156,7 +187,9 @@ class Player {
           dataStore.isLikeSong(playSongData?.id || 0),
         );
       }
-    });
+    };
+    audioManager.on("canplay", canplayCallback);
+    this.eventCallbacks.set("canplay", canplayCallback);
   }
   /**
    * 创建播放器并播放
@@ -184,8 +217,9 @@ class Player {
       if (seek && seek > 0) {
         audioManager.seek(seek / 1000);
       }
-    } catch (e) {
-      console.error("Player create failed", e);
+    } catch (err) {
+      console.error("❌ 播放器初始化失败:", err);
+      throw err;
     }
     // 获取歌词数据
     lyricManager.handleLyric(id, path);
@@ -273,19 +307,85 @@ class Player {
     const dataStore = useDataStore();
     const playSongData = songManager.getPlaySongData();
     const currentSongId = playSongData?.type === "radio" ? playSongData.dj?.id : playSongData?.id;
+    // 保存当前播放进度，用于恢复
+    const currentSeek = this.getSeek();
     // 初始化/切换曲目时重置计数
     if (!this.retryInfo.songId || this.retryInfo.songId !== Number(currentSongId || 0)) {
       this.retryInfo = { songId: Number(currentSongId || 0), count: 0 };
     }
     this.retryInfo.count += 1;
-    // 错误码 2：资源过期或临时网络错误
-    if (errCode === 2 && this.retryInfo.count <= 2) {
-      await this.initPlayer(true, this.getSeek());
+    // 如果错误码未定义或为 0，且重试次数过多，直接跳过避免无限重试
+    if ((errCode === undefined || errCode === 0) && this.retryInfo.count > 2) {
+      console.warn("⚠️ 未知错误且重试次数过多，跳过重试:", {
+        count: this.retryInfo.count,
+        errCode,
+      });
+      this.retryInfo.count = 0;
+      if (dataStore.playList.length > 1) {
+        window.$message.error("播放失败，已跳至下一首");
+        await this.nextOrPrev("next");
+      } else {
+        window.$message.error("当前列表暂无可播放歌曲");
+        this.cleanPlayList();
+      }
       return;
     }
-    // 其它错误：最多 3 次
+    // 1：用户中止了加载，不进行重试
+    if (errCode === 1) {
+      console.log("⏸️ 用户中止播放，不进行重试");
+      this.retryInfo.count = 0;
+      return;
+    }
+    // 4：音频格式不被支持，直接跳到下一首
+    if (errCode === 4) {
+      console.error("❌ 音频格式不支持:", { songId: currentSongId, errorCode: errCode });
+      this.retryInfo.count = 0;
+      if (dataStore.playList.length > 1) {
+        window.$message.error("音频格式不支持，已跳至下一首");
+        await this.nextOrPrev("next");
+      } else {
+        window.$message.error("当前列表暂无可播放歌曲");
+        this.cleanPlayList();
+      }
+      return;
+    }
+    // 3：解码错误，通常无法通过重试解决，减少重试次数
+    if (errCode === 3) {
+      if (this.retryInfo.count <= 1) {
+        console.log("🔄 检测到解码错误，尝试重试:", { count: this.retryInfo.count });
+        if (this.retryInfo.count === 1) {
+          window.$message.info("播放出现问题，正在尝试恢复...");
+        }
+        await this.initPlayer(true, currentSeek);
+        return;
+      }
+      // 解码错误重试 1 次后直接跳过
+      console.error("❌ 解码错误，重试失败:", { songId: currentSongId, errorCode: errCode });
+      this.retryInfo.count = 0;
+      if (dataStore.playList.length > 1) {
+        window.$message.error("音频解码失败，已跳至下一首");
+        await this.nextOrPrev("next");
+      } else {
+        window.$message.error("当前列表暂无可播放歌曲");
+        this.cleanPlayList();
+      }
+      return;
+    }
+    // 2：资源过期或临时网络错误（通常是长时间暂停导致URL过期）
+    if (errCode === 2 && this.retryInfo.count <= 2) {
+      console.log("🔄 检测到资源过期，重新获取播放地址并从原位置继续:", currentSeek);
+      await this.initPlayer(true, currentSeek);
+      return;
+    }
+    // 其它错误：最多 3 次，首次重试从原位置开始
     if (this.retryInfo.count <= 3) {
-      await this.initPlayer(true, 0);
+      const seekPosition = this.retryInfo.count === 1 ? currentSeek : 0;
+      console.log("🔄 播放出错，尝试重试:", { count: this.retryInfo.count, seekPosition, errCode });
+      // 只在第一次重试时显示提示，避免过于频繁
+      if (this.retryInfo.count === 1) {
+        window.$message.info("播放出现问题，正在尝试恢复...");
+      }
+      await this.initPlayer(true, seekPosition);
       return;
     }
     // 超过次数：切到下一首或清空
@@ -391,6 +491,13 @@ class Player {
           await this.parseLocalMusicInfo(path);
         } catch (err) {
           console.error("播放器初始化错误（本地）：", err);
+          // createPlayer 内部已触发 handlePlaybackError，这里只记录日志
+          // 如果 createPlayer 没有触发错误处理，则手动触发
+          const errCode = audioManager.getErrorCode();
+          if (errCode === 0) {
+            // 如果没有错误码，可能是其他类型的错误，触发通用错误处理
+            await this.handlePlaybackError(undefined);
+          }
         }
       }
       // 在线歌曲
@@ -453,6 +560,13 @@ class Player {
             await this.createPlayer(playerUrl, autoPlay, seek);
           } catch (err) {
             console.error("播放器初始化错误（在线）：", err);
+            // createPlayer 内部已触发 handlePlaybackError，这里只记录日志
+            // 如果 createPlayer 没有触发错误处理，则手动触发
+            const errCode = audioManager.getErrorCode();
+            if (errCode === 0) {
+              // 如果没有错误码，可能是其他类型的错误，触发通用错误处理
+              await this.handlePlaybackError(undefined);
+            }
           }
         }
       }
@@ -742,7 +856,12 @@ class Player {
     data: SongType[],
     song?: SongType,
     pid?: number,
-    options: { showTip?: boolean; scrobble?: boolean; play?: boolean } = {
+    options: {
+      showTip?: boolean;
+      scrobble?: boolean;
+      play?: boolean;
+      keepHeartbeatMode?: boolean;
+    } = {
       showTip: true,
       scrobble: true,
       play: true,
@@ -766,7 +885,9 @@ class Player {
     // 更新列表
     await dataStore.setPlayList(processedData);
     // 关闭特殊模式
-    if (statusStore.playHeartbeatMode) this.toggleHeartMode(false);
+    if (statusStore.playHeartbeatMode && !options.keepHeartbeatMode) {
+      this.toggleHeartMode(false);
+    }
     if (statusStore.personalFmMode) statusStore.personalFmMode = false;
     // 是否直接播放
     if (song && typeof song === "object" && "id" in song) {
@@ -1020,9 +1141,15 @@ class Player {
         this.message?.destroy();
         const heartRatelists = formatSongsList(result.data);
         this.nextPrefetch = null;
-        statusStore.playHeartbeatMode = true;
         statusStore.playIndex = 0;
-        await this.updatePlayList(heartRatelists, heartRatelists[0]);
+        // 先更新播放列表，再设置心动模式标志
+        await this.updatePlayList(heartRatelists, heartRatelists[0], undefined, {
+          showTip: true,
+          scrobble: true,
+          play: true,
+          keepHeartbeatMode: true,
+        });
+        statusStore.playHeartbeatMode = true;
       } else {
         this.message?.destroy();
         window.$message.error(result.message || "心动模式开启出错，请重试");
