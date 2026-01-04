@@ -4,6 +4,8 @@ import { openUserAgreement } from "@/utils/modal";
 import { debounce } from "lodash-es";
 import { isElectron } from "./env";
 import { usePlayerController } from "@/core/player/PlayerController";
+import { mediaSessionManager } from "@/core/player/MediaSessionManager";
+import { useDownloadManager } from "@/core/resource/DownloadManager";
 import packageJson from "@/../package.json";
 import log from "./log";
 
@@ -16,6 +18,7 @@ const init = async () => {
   const shortcutStore = useShortcutStore();
 
   const player = usePlayerController();
+  const downloadManager = useDownloadManager();
 
   // 检查并执行设置迁移
   settingStore.checkAndMigrate();
@@ -32,7 +35,7 @@ const init = async () => {
   await dataStore.loadData();
 
   // 初始化 MediaSession
-  player.initMediaSession();
+  mediaSessionManager.init();
 
   // 初始化播放器
   player.playSong({
@@ -49,6 +52,8 @@ const init = async () => {
   if (isElectron) {
     // 注册全局快捷键
     shortcutStore.registerAllShortcuts();
+    // 初始化下载管理器
+    downloadManager.init();
     // 显示窗口
     window.electron.ipcRenderer.send("win-loaded");
     // 显示桌面歌词
@@ -121,7 +126,7 @@ const keyDownEvent = debounce((event: KeyboardEvent) => {
         case "volumeDown":
           player.setVolume("down");
           break;
-        case "toogleDesktopLyric":
+        case "toggle-desktop-lyric":
           player.toggleDesktopLyric();
           break;
         case "openPlayer":

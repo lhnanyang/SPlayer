@@ -12,6 +12,20 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">本地文件夹显示模式</n-text>
+          <n-text class="tip" :depth="3">选择本地音乐页面文件夹的显示方式</n-text>
+        </div>
+        <n-select
+          class="set"
+          v-model:value="settingStore.localFolderDisplayMode"
+          :options="[
+            { label: '标签页模式', value: 'tab' },
+            { label: '下拉筛选模式', value: 'dropdown' },
+          ]"
+        />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">显示本地默认歌曲目录</n-text>
         </div>
         <n-switch class="set" v-model:value="settingStore.showDefaultLocalPath" :round="false" />
@@ -26,7 +40,7 @@
             <template #icon>
               <SvgIcon name="Folder" />
             </template>
-            更改
+            添加
           </n-button>
         </n-flex>
         <n-collapse-transition :show="settingStore.localFilesPath.length > 0">
@@ -34,6 +48,7 @@
             v-for="(item, index) in settingStore.localFilesPath"
             :key="index"
             class="set-item"
+            content-style="padding: 4px 16px"
           >
             <div class="label">
               <n-text class="name">{{ item }}</n-text>
@@ -61,7 +76,7 @@
             <template #icon>
               <SvgIcon name="Folder" />
             </template>
-            更改
+            添加
           </n-button>
         </n-flex>
         <n-collapse-transition :show="settingStore.localLyricPath.length > 0">
@@ -69,6 +84,7 @@
             v-for="(item, index) in settingStore.localLyricPath"
             :key="index"
             class="set-item"
+            content-style="padding: 4px 16px"
           >
             <div class="label">
               <n-text class="name">{{ item }}</n-text>
@@ -94,14 +110,55 @@
       <n-collapse-transition :show="settingStore.cacheEnabled">
         <n-card class="set-item">
           <div class="label">
-            <n-text class="name">缓存大小上限</n-text>
-            <n-text class="tip" :depth="3">达到上限后将清理最旧的缓存</n-text>
+            <n-text class="name">缓存歌曲</n-text>
+            <n-text class="tip" :depth="3">是否缓存歌曲音频，关闭后可节省缓存空间</n-text>
           </div>
-          <n-select
-            v-model:value="settingStore.cacheMaxSizeGB"
-            :options="cacheSizeOptions"
-            class="set"
-          />
+          <n-switch class="set" v-model:value="settingStore.songCacheEnabled" :round="false" />
+        </n-card>
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">缓存大小上限</n-text>
+            <n-text class="tip" :depth="3">达到上限后将清理最旧的缓存，可以是小数，最低 2GB</n-text>
+          </div>
+          <n-input-group class="set">
+            <n-input-number
+              :value="cacheLimit"
+              :update-value-on-input="false"
+              :min="2"
+              :max="9999"
+              :style="{
+                width: cacheLimited ? '55%' : '0%',
+                transition: 'width 0.3s',
+              }"
+              @update:value="
+                (value) => {
+                  cacheLimit = value ?? 2;
+                  changeCacheLimit(cacheLimit);
+                }
+              "
+            />
+            <n-select
+              v-model:value="cacheLimited"
+              :options="[
+                { label: '不限制', value: 0 },
+                { label: cacheLimited === 0 ? '自定义大小 (GB)' : 'GB', value: 1 },
+              ]"
+              :style="{
+                width: cacheLimited ? '45%' : '100%',
+                transition: 'width 0.3s',
+              }"
+              @update:value="
+                (value) => {
+                  if (value === 0) {
+                    changeCacheLimit(0);
+                  } else {
+                    if (cacheLimit === 0) cacheLimit = 2;
+                    changeCacheLimit(cacheLimit);
+                  }
+                }
+              "
+            />
+          </n-input-group>
         </n-card>
         <n-card class="set-item">
           <div class="label">
@@ -119,19 +176,16 @@
             </n-button>
           </n-flex>
         </n-card>
-        <n-card class="set-item">
-          <div class="label">
-            <n-text class="name">缓存占用与清理</n-text>
-            <n-text class="tip" :depth="3">当前缓存占用：{{ cacheSizeDisplay }}</n-text>
-          </div>
-          <n-flex>
-            <n-button strong secondary @click="loadCacheSize"> 刷新占用 </n-button>
-            <n-button type="error" strong secondary @click="confirmClearCache"> 清空缓存 </n-button>
-          </n-flex>
-        </n-card>
       </n-collapse-transition>
+      <n-card class="set-item">
+        <div class="label">
+          <n-text class="name">缓存占用与清理</n-text>
+          <n-text class="tip" :depth="3">当前缓存占用：{{ cacheSizeDisplay }}</n-text>
+        </div>
+        <n-button type="error" strong secondary @click="confirmClearCache"> 清空缓存 </n-button>
+      </n-card>
     </div>
-    <div class="set-list">
+    <div v-if="statusStore.isDeveloperMode" class="set-list">
       <n-h3 prefix="bar"> 下载配置 </n-h3>
       <n-card class="set-item">
         <div class="label">
@@ -282,16 +336,20 @@
 </template>
 
 <script setup lang="ts">
-import { useSettingStore } from "@/stores";
-import { changeLocalLyricPath, changeLocalMusicPath } from "@/utils/helper";
+import { useSettingStore, useStatusStore } from "@/stores";
+import { changeLocalLyricPath, changeLocalMusicPath, formatFileSize } from "@/utils/helper";
 import { songLevelData, getSongLevelsData } from "@/utils/meta";
 import { useCacheManager, type CacheResourceType } from "@/core/resource/CacheManager";
 import { pick } from "lodash-es";
 
+const statusStore = useStatusStore();
 const settingStore = useSettingStore();
 const cacheManager = useCacheManager();
+
 const cachePath = ref<string>("");
 const cacheSizeDisplay = ref<string>("--");
+const cacheLimit = ref<number>(10); // 本地状态
+const cacheLimited = ref<number>(1); // 是否限制缓存 (1 为限制)
 
 // 默认下载音质选项
 const downloadQualityOptions = computed(() => {
@@ -332,41 +390,6 @@ const folderStrategyOptions = [
   },
 ];
 
-const cacheSizeOptions = [
-  {
-    label: "不限制",
-    value: 0,
-  },
-  {
-    label: "5G",
-    value: 5,
-  },
-  {
-    label: "10G",
-    value: 10,
-  },
-  {
-    label: "15G",
-    value: 15,
-  },
-  {
-    label: "20G",
-    value: 20,
-  },
-  {
-    label: "25G",
-    value: 25,
-  },
-  {
-    label: "30G",
-    value: 30,
-  },
-  {
-    label: "50G",
-    value: 50,
-  },
-];
-
 // 选择下载路径
 const choosePath = async () => {
   const path = await window.electron.ipcRenderer.invoke("choose-path");
@@ -395,33 +418,24 @@ const confirmChangeCachePath = () => {
   });
 };
 
-// 格式化字节大小为可读字符串
-const formatBytes = (bytes: number): string => {
-  if (!bytes) return "0 B";
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
-  const gb = mb / 1024;
-  return `${gb.toFixed(2)} GB`;
+// 更改缓存大小限制
+const changeCacheLimit = async (value: number) => {
+  await window.api.store.set("cacheLimit", value);
 };
 
 // 统计全部缓存目录占用大小
 const loadCacheSize = async () => {
-  const types: CacheResourceType[] = ["music", "lyrics", "local-data", "playlist-data"];
-  let total = 0;
-  for (const type of types) {
-    const res = await cacheManager.list(type);
-    if (res.success && res.data) {
-      total += res.data.reduce((sum, item) => sum + item.size, 0);
-    }
+  const res = await cacheManager.getSize();
+  if (res.success && res.data !== undefined) {
+    cacheSizeDisplay.value = formatFileSize(res.data);
+  } else {
+    cacheSizeDisplay.value = "--";
   }
-  cacheSizeDisplay.value = formatBytes(total);
 };
 
 // 清空所有缓存目录
 const clearCache = async () => {
-  const types: CacheResourceType[] = ["music", "lyrics", "local-data", "playlist-data"];
+  const types: CacheResourceType[] = ["music", "lyrics", "local-data", "list-data"];
   let hasError = false;
   for (const type of types) {
     const res = await cacheManager.clear(type);
@@ -472,6 +486,11 @@ onMounted(async () => {
   try {
     const path = await window.api.store.get("cachePath");
     cachePath.value = path || "";
+    const limit = await window.api.store.get("cacheLimit");
+    if (typeof limit === "number") {
+      cacheLimit.value = limit;
+      if (limit === 0) cacheLimited.value = 0;
+    }
   } catch (error) {
     console.error("读取缓存路径失败:", error);
   }

@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <Transition name="up" mode="out-in">
+    <Transition :name="settingStore.playerExpandAnimation" mode="out-in">
       <div
         v-if="statusStore.showFullPlayer"
         :style="{
@@ -54,11 +54,8 @@
                 :light="pureLyricMode"
               />
               <!-- 歌词 -->
-              <MainAMLyric
-                v-if="settingStore.useAMLyrics"
-                :key="`am-lyric-${musicStore.playSong.id}`"
-              />
-              <MainLyric v-else :key="`lyric-${musicStore.playSong.id}`" />
+              <MainAMLyric v-if="settingStore.useAMLyrics" />
+              <MainLyric v-else />
             </div>
           </div>
         </Transition>
@@ -89,7 +86,7 @@ const statusStore = useStatusStore();
 const settingStore = useSettingStore();
 
 /** 封面主颜色 */
-const mainCoverColor = useCssVar("--main-cover-color", document.body);
+const mainCoverColor = useCssVar("--main-cover-color", document.documentElement);
 
 // 是否显示评论
 const isShowComment = computed<boolean>(

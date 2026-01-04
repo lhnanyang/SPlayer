@@ -1,4 +1,4 @@
-# SPlayer API 接口文档
+# API 接口文档
 
 ## 概述
 
@@ -29,11 +29,11 @@
 
 ---
 
-## 一、播放控制接口 (Control API)
+## 播放控制接口 (Control API)
 
 **基础路径**: `/api/control`
 
-### 1. 播放
+### 播放
 
 **接口**: `GET /api/control/play`
 
@@ -51,7 +51,7 @@
 
 ---
 
-### 2. 暂停
+### 暂停
 
 **接口**: `GET /api/control/pause`
 
@@ -69,7 +69,7 @@
 
 ---
 
-### 3. 播放/暂停切换
+### 播放/暂停切换
 
 **接口**: `GET /api/control/toggle`
 
@@ -87,7 +87,7 @@
 
 ---
 
-### 4. 下一曲
+### 下一曲
 
 **接口**: `GET /api/control/next`
 
@@ -105,7 +105,7 @@
 
 ---
 
-### 5. 上一曲
+### 上一曲
 
 **接口**: `GET /api/control/prev`
 
@@ -123,7 +123,7 @@
 
 ---
 
-### 6. 获取状态
+### 获取状态
 
 **接口**: `GET /api/control/status`
 
@@ -169,13 +169,13 @@
 
 ---
 
-## 二、网易云音乐 API (Netease API)
+## 云音乐 API (Netease API)
 
 **基础路径**: `/api/netease`
 
 ### 使用说明
 
-网易云音乐 API 支持所有 NeteaseCloudMusicApi Enhanced 的接口。接口路径会自动转换为 kebab-case 格式。
+云音乐 API 支持所有 NeteaseCloudMusicApi Enhanced 的接口。接口路径会自动转换为 kebab-case 格式。
 
 **示例**:
 
@@ -187,11 +187,11 @@
 
 ---
 
-## 三、解锁接口 (Unblock API)
+## 解锁 API (Unblock API)
 
 **基础路径**: `/api/unblock`
 
-### 1. 网易云解锁
+### 云音乐解锁
 
 **接口**: `GET /api/unblock/netease?id={songId}`
 
@@ -212,7 +212,7 @@
 
 ---
 
-### 2. 酷我解锁
+### 酷我解锁
 
 **接口**: `GET /api/unblock/kuwo?keyword={keyword}`
 
@@ -233,7 +233,7 @@
 
 ---
 
-### 3. 波点解锁
+### 波点解锁
 
 **接口**: `GET /api/unblock/bodian?keyword={keyword}`
 
@@ -254,7 +254,7 @@
 
 ---
 
-### 4. 歌曲宝解锁
+### 歌曲宝解锁
 
 **接口**: `GET /api/unblock/gequbao?keyword={keyword}`
 
@@ -275,7 +275,7 @@
 
 ---
 
-## 四、API 列表
+## 全部 API 列表
 
 **接口**: `GET /api`
 
@@ -323,9 +323,9 @@
 
 ---
 
-## 使用示例
+### 使用示例
 
-### cURL 示例
+#### cURL 示例
 
 ```bash
 # 播放
@@ -341,7 +341,7 @@ curl http://localhost:25884/api/control/next
 curl http://localhost:25884/api/control/status
 ```
 
-### JavaScript 示例
+#### JavaScript 示例
 
 ```javascript
 // 播放
@@ -355,7 +355,7 @@ fetch("http://localhost:25884/api/control/status")
   .then((data) => console.log(data));
 ```
 
-### Python 示例
+#### Python 示例
 
 ```python
 import requests
@@ -374,9 +374,11 @@ print(response.json())
 ## 注意事项
 
 1. 所有接口仅在应用程序运行时可用
-2. 默认端口为 `25884`，可在环境变量 `VITE_SERVER_PORT` 中配置
-3. 解锁接口仅供学习使用，请勿用于商业用途
-4. 网易云音乐 API 需要登录后才能使用部分功能
-5. 接口响应时间取决于网络状况和服务器负载
+2. HTTP API 默认端口为 `25884`，可在环境变量 `VITE_SERVER_PORT` 中配置
+3. WebSocket API 默认端口为 `25885`，可在应用程序设置中修改
+4. 解锁接口仅供学习使用，请勿用于商业用途
+5. 网易云音乐 API 需要登录后才能使用部分功能
+6. 接口响应时间取决于网络状况和服务器负载
+7. WebSocket 连接支持心跳检测（PING/PONG），建议客户端定期发送心跳以保持连接
 
 ---

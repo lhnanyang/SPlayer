@@ -27,6 +27,7 @@ import SidebarHideManager from "@/components/Modal/Setting/SidebarHideManager.vu
 import HomePageSectionManager from "@/components/Modal/Setting/HomePageSectionManager.vue";
 import CopyLyrics from "@/components/Modal/CopyLyrics.vue";
 import AMLLServer from "@/components/Modal/Setting/AMLLServer.vue";
+import FontManager from "@/components/Modal/Setting/FontManager.vue";
 
 export const openUserAgreement = () => {
   const settingStore = useSettingStore();
@@ -75,11 +76,15 @@ export const openUserLogin = (showTip: boolean = false) => {
   });
 };
 
-// 跳转到歌手
-export const openJumpArtist = (data: SongType["artists"]) => {
+/**
+ * 跳转到歌手
+ * @param data 歌手信息
+ * @param id 歌手 id
+ * @returns
+ */
+export const openJumpArtist = (data: SongType["artists"], id?: number) => {
   // 若 data 为数组且只有一个元素，则直接跳转
-  if (isArray(data) && data.length === 1) {
-    const id = data[0].id;
+  if (isArray(data) && data.length <= 2 && id) {
     router.push({ name: "artist", query: { id } });
     return;
   }
@@ -236,8 +241,17 @@ export const openDownloadSongs = (songs: SongType[]): void => {
   });
 };
 
+// 设置页面是否已打开
+let isSettingOpen = false;
+
 // 打开设置
-export const openSetting = (type: SettingType = "general") => {
+export const openSetting = (type: SettingType = "general", scrollTo?: string) => {
+  // 如果设置页面已打开，显示提醒
+  if (isSettingOpen) {
+    window.$message.warning("设置页面已打开");
+    return;
+  }
+  isSettingOpen = true;
   window.$modal.create({
     preset: "card",
     transformOrigin: "center",
@@ -247,7 +261,10 @@ export const openSetting = (type: SettingType = "general") => {
     bordered: true,
     class: "main-setting",
     content: () => {
-      return h(MainSetting, { type });
+      return h(MainSetting, { type, scrollTo });
+    },
+    onAfterLeave: () => {
+      isSettingOpen = false;
     },
   });
 };
@@ -416,6 +433,20 @@ export const openAMLLServer = () => {
       return h(AMLLServer, {
         onClose: () => modal.destroy(),
       });
+    },
+  });
+};
+
+/** 打开字体管理弹窗 */
+export const openFontManager = () => {
+  window.$modal.create({
+    preset: "card",
+    transformOrigin: "center",
+    autoFocus: false,
+    style: { width: "700px" },
+    title: "字体设置",
+    content: () => {
+      return h(FontManager);
     },
   });
 };
