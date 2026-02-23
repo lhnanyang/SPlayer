@@ -1,6 +1,14 @@
-import type { ColorScheme, RGB } from "@/types/main";
-import { QualityType, type SongLevelDataType, type SortField, type SortOrder } from "@/types/main";
-import { RepeatModeType, ShuffleModeType } from "@/types/shared";
+import type {
+  AudioSourceType,
+  ColorScheme,
+  QualityType,
+  RGB,
+  SongLevelDataType,
+  SortField,
+  SortOrder,
+  UpdateInfoType,
+} from "@/types/main";
+import type { RepeatModeType, ShuffleModeType } from "@/types/shared/play-mode";
 import { isDevBuild } from "@/utils/env";
 import { defineStore } from "pinia";
 
@@ -58,18 +66,10 @@ interface StatusState {
   usingTTMLLyric: boolean;
   /** 当前是否正使用 QRC 歌词（来自QQ音乐） */
   usingQRCLyric: boolean;
-  /** 可用的歌词源列表 */
-  availableLyricSources: string[];
-  /** 用户偏好的歌词源（用于切换） */
-  preferredLyricSource: string | null;
-  /** 可用的音频源列表 */
-  availableAudioSources: string[];
-  /** 用户偏好的音频源（用于切换） */
-  preferredAudioSource: string | null;
   /** 当前歌曲音质 */
   songQuality: QualityType | undefined;
   /** 当前歌曲音源 */
-  audioSource: string | undefined;
+  audioSource: AudioSourceType | undefined;
   /** 当前播放索引 */
   playIndex: number;
   /** 歌词播放索引 */
@@ -84,8 +84,6 @@ interface StatusState {
   progress: number;
   /** 每首歌曲的进度偏移（按歌曲 id 记忆） */
   currentTimeOffsetMap: Record<number, number>;
-  /** 是否为解锁歌曲 */
-  playUblock: boolean;
   /** 主内容高度 */
   mainContentHeight: number;
   /** 列表排序字段 */
@@ -102,6 +100,16 @@ interface StatusState {
   personalFmMode: boolean;
   /** 更新检查 */
   updateCheck: boolean;
+  /** 有可用更新 */
+  updateAvailable: boolean;
+  /** 更新信息 */
+  updateInfo: UpdateInfoType | null;
+  /** 更新已下载完成 */
+  updateDownloaded: boolean;
+  /** 更新下载中 */
+  updateDownloading: boolean;
+  /** 更新下载进度 */
+  updateDownloadProgress: number;
   /** 均衡器是否开启 */
   eqEnabled: boolean;
   /** 均衡器 10 段增益（dB） */
@@ -153,6 +161,10 @@ interface StatusState {
     pointA: number | null;
     pointB: number | null;
   };
+  /** 侧边栏歌单显示模式 */
+  playlistMode: "online" | "local";
+  automixFxSeq: number;
+  automixEndedSeq: number;
 }
 
 export const useStatusStore = defineStore("status", {
@@ -164,7 +176,6 @@ export const useStatusStore = defineStore("status", {
     showPlayBar: true,
     playStatus: false,
     playLoading: true,
-    playUblock: false,
     playListShow: false,
     showFullPlayer: false,
     playerMetaShow: true,
@@ -176,10 +187,6 @@ export const useStatusStore = defineStore("status", {
     pureLyricMode: false,
     usingTTMLLyric: false,
     usingQRCLyric: false,
-    availableLyricSources: [],
-    preferredLyricSource: null,
-    availableAudioSources: [],
-    preferredAudioSource: null,
     songQuality: undefined,
     audioSource: undefined,
     playIndex: -1,
@@ -198,6 +205,11 @@ export const useStatusStore = defineStore("status", {
     showTaskbarLyric: false,
     showPlayerComment: false,
     updateCheck: false,
+    updateAvailable: false,
+    updateInfo: null,
+    updateDownloaded: false,
+    updateDownloading: false,
+    updateDownloadProgress: 0,
     eqEnabled: false,
     eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     eqPreset: "acoustic",
@@ -233,6 +245,9 @@ export const useStatusStore = defineStore("status", {
       pointA: null,
       pointB: null,
     },
+    playlistMode: "online",
+    automixFxSeq: 0,
+    automixEndedSeq: 0,
   }),
   getters: {
     // 播放音量图标
@@ -246,23 +261,25 @@ export const useStatusStore = defineStore("status", {
             ? "VolumeDown"
             : "VolumeUp";
     },
+    /** 播放模式图标 */
     shuffleIcon(state) {
       if (state.shuffleMode === "heartbeat") {
         return "HeartBit";
       }
       return "Shuffle";
     },
+    /** 循环模式图标 */
     repeatIcon(state) {
       if (state.repeatMode === "one") {
         return "RepeatSong";
       }
       return "Repeat";
     },
-    // 音量百分比
+    /** 音量百分比 */
     playVolumePercent(state) {
       return Math.round(state.playVolume * 100);
     },
-    // 播放器主色
+    /** 播放器主色 */
     mainColor(state) {
       const mainColor = state.songCoverTheme?.main;
       if (!mainColor) return "239, 239, 239";
@@ -276,8 +293,24 @@ export const useStatusStore = defineStore("status", {
     isDeveloperMode(state) {
       return state.developerMode || isDevBuild;
     },
+    /** 是否解锁 */
+    isUnlocked(state) {
+      const audioSource = state.audioSource;
+      return (
+        !!audioSource &&
+        audioSource !== "official" &&
+        audioSource !== "local" &&
+        audioSource !== "streaming"
+      );
+    },
   },
   actions: {
+    triggerAutomixFx() {
+      this.automixFxSeq += 1;
+    },
+    endAutomixFx() {
+      this.automixEndedSeq += 1;
+    },
     /**
      * 获取指定歌曲的偏移
      * 单位：毫秒
@@ -428,6 +461,7 @@ export const useStatusStore = defineStore("status", {
       "developerMode",
       "themeBackgroundMode",
       "backgroundConfig",
+      "playlistMode",
     ],
   },
 });

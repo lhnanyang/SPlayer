@@ -5,69 +5,39 @@
 
 use std::{
     ptr,
-    sync::{
-        Arc,
-        mpsc,
-    },
+    sync::{Arc, mpsc},
     thread,
 };
 
-use anyhow::{
-    Result,
-    anyhow,
-};
-use napi::threadsafe_function::{
-    ThreadsafeFunction,
-    ThreadsafeFunctionCallMode,
-};
+use anyhow::{Result, anyhow};
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use windows::{
     Win32::{
-        Foundation::{
-            LPARAM,
-            WPARAM,
-        },
+        Foundation::{LPARAM, WPARAM},
         System::{
             Com::{
-                CLSCTX_INPROC_SERVER,
-                COINIT_MULTITHREADED,
-                CoCreateInstance,
-                CoInitializeEx,
-                CoUninitialize,
-                SAFEARRAY,
+                CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+                CoUninitialize, SAFEARRAY,
             },
             Threading::GetCurrentThreadId,
             Variant::VARIANT,
         },
         UI::{
             Accessibility::{
-                CUIAutomation,
-                IUIAutomation,
-                IUIAutomationElement,
+                CUIAutomation, IUIAutomation, IUIAutomationElement,
                 IUIAutomationPropertyChangedEventHandler,
                 IUIAutomationPropertyChangedEventHandler_Impl,
                 IUIAutomationStructureChangedEventHandler,
-                IUIAutomationStructureChangedEventHandler_Impl,
-                StructureChangeType,
-                TreeScope_Descendants,
-                UIA_BoundingRectanglePropertyId,
-                UIA_PROPERTY_ID,
+                IUIAutomationStructureChangedEventHandler_Impl, StructureChangeType,
+                TreeScope_Descendants, UIA_BoundingRectanglePropertyId, UIA_PROPERTY_ID,
             },
             WindowsAndMessaging::{
-                DispatchMessageW,
-                GetMessageW,
-                MSG,
-                PostThreadMessageW,
-                TranslateMessage,
-                WM_QUIT,
+                DispatchMessageW, GetMessageW, MSG, PostThreadMessageW, TranslateMessage, WM_QUIT,
             },
         },
     },
-    core::{
-        Ref,
-        Result as WinResult,
-        implement,
-    },
+    core::{Ref, Result as WinResult, implement},
 };
 
 use crate::utils::find_taskbar_hwnd;
@@ -120,7 +90,6 @@ impl IUIAutomationStructureChangedEventHandler_Impl for TaskbarEventHandler_Impl
 
 pub struct NativeUiaWatcher {
     thread_id: Option<u32>,
-    thread_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl NativeUiaWatcher {
@@ -128,7 +97,7 @@ impl NativeUiaWatcher {
         let (tx, rx) = mpsc::channel::<u32>();
         let callback_arc = Arc::new(callback);
 
-        let handle = thread::spawn(move || unsafe {
+        thread::spawn(move || unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
             let thread_id = GetCurrentThreadId();
@@ -186,7 +155,6 @@ impl NativeUiaWatcher {
 
         Ok(Self {
             thread_id: Some(thread_id),
-            thread_handle: Some(handle),
         })
     }
 
@@ -196,10 +164,6 @@ impl NativeUiaWatcher {
                 let _ = PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0));
             }
             self.thread_id = None;
-        }
-
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
         }
     }
 }
@@ -239,14 +203,8 @@ impl UiaWatcher {
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{
-            Arc,
-            Mutex,
-        },
-        time::{
-            Duration,
-            Instant,
-        },
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
     };
 
     use super::*;

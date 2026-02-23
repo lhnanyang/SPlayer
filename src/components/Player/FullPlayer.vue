@@ -6,8 +6,10 @@
         :style="{
           cursor: statusStore.playerMetaShow || isShowComment ? 'auto' : 'none',
         }"
-        :class="['full-player', { 'show-comment': isShowComment }]"
+        :class="['full-player', { 'show-comment': isShowComment && !statusStore.pureLyricMode }]"
         @mouseleave="playerLeave"
+        @mousemove="playerMove"
+        @click="playerMove"
       >
         <!-- 背景 -->
         <PlayerBackground />
@@ -29,7 +31,7 @@
           <!-- 菜单 -->
           <PlayerMenu @mouseenter.stop="stopHide" @mouseleave.stop="playerMove" />
           <!-- 全屏封面 -->
-          <PlayerCover v-if="settingStore.playerType === 'fullscreen' && !pureLyricMode" />
+          <PlayerCover v-if="showFullScreenCover" />
           <!-- 主内容 -->
           <Transition name="zoom" mode="out-in">
             <div
@@ -95,11 +97,13 @@
 <script setup lang="ts">
 import { useMobile } from "@/composables/useMobile";
 import { useStatusStore, useMusicStore, useSettingStore } from "@/stores";
+import { usePlayerController } from "@/core/player/PlayerController";
 import { isElectron } from "@/utils/env";
 
 const musicStore = useMusicStore();
 const statusStore = useStatusStore();
 const settingStore = useSettingStore();
+const player = usePlayerController();
 
 const { isTablet } = useMobile();
 
@@ -114,13 +118,18 @@ const isShowComment = computed<boolean>(
 /** 没有歌词 */
 const noLrc = computed<boolean>(() => {
   const noNormalLrc = !musicStore.isHasLrc;
-  const noYrcAvailable = !musicStore.isHasYrc || !settingStore.showYrc;
+  const noYrcAvailable = !musicStore.isHasYrc || !settingStore.showWordLyrics;
   return noNormalLrc && noYrcAvailable;
 });
 
 /** 是否处于纯净模式 */
 const pureLyricMode = computed<boolean>(
   () => (statusStore.pureLyricMode && musicStore.isHasLrc) || musicStore.playSong.type === "radio",
+);
+
+/* 是否显示全屏封面 */
+const showFullScreenCover = computed<boolean>(
+  () => settingStore.playerType === "fullscreen" && !pureLyricMode.value && !isShowComment.value,
 );
 
 // 主内容 key
@@ -152,7 +161,7 @@ const playerDataCenter = computed<boolean>(
 
 // 当前实时歌词
 const instantLyrics = computed(() => {
-  const isYrc = musicStore.songLyric.yrcData?.length && settingStore.showYrc;
+  const isYrc = musicStore.songLyric.yrcData?.length && settingStore.showWordLyrics;
   const content = isYrc
     ? musicStore.songLyric.yrcData[statusStore.lyricIndex]
     : musicStore.songLyric.lrcData[statusStore.lyricIndex];
@@ -206,6 +215,34 @@ watch(
     mainCoverColor.value = newVal;
   },
 );
+
+// 键盘控制
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.code === "Space") {
+    const activeElement = document.activeElement as HTMLElement;
+    // 如果焦点在输入框、文本域或任何可编辑元素上，则不响应
+    if (
+      activeElement &&
+      (activeElement.tagName === "INPUT" ||
+        activeElement.tagName === "TEXTAREA" ||
+        activeElement.isContentEditable)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    player.playOrPause();
+  }
+};
+
+// 监听全屏状态
+watchEffect((onCleanup) => {
+  if (statusStore.showFullPlayer) {
+    window.addEventListener("keydown", onKeydown);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKeydown);
+    });
+  }
+});
 
 onMounted(() => {
   mainCoverColor.value = statusStore.mainColor;
@@ -262,7 +299,6 @@ onBeforeUnmount(() => {
     align-items: center;
     width: 100%;
     height: calc(100vh - 160px);
-    z-index: 0;
     transition:
       opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
       transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -287,6 +323,7 @@ onBeforeUnmount(() => {
       height: 100%;
       display: flex;
       flex-direction: column;
+      mix-blend-mode: plus-lighter;
       transition:
         width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
         opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);

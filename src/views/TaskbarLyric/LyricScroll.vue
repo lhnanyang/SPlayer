@@ -8,19 +8,37 @@
         'animate-scroll': mode === 'line' && isActive && isOverflow,
       }"
     >
-      {{ text }}
+      <template v-if="mode === 'word' && words?.length && isActive">
+        <span
+          v-for="(word, index) in words"
+          :key="index"
+          class="word-item"
+          :style="getWordStyle(word)"
+          >{{ word.word }}</span
+        >
+      </template>
+      <template v-else>
+        {{ text }}
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
+import type { LyricWord } from "@applemusic-like-lyrics/lyric";
+import { type CSSProperties } from "vue";
 
 const props = defineProps<{
   text: string;
   isActive: boolean;
   mode: "line" | "word";
   progress?: number;
+  words?: LyricWord[];
+  currentTime?: number;
+}>();
+
+const emit = defineEmits<{
+  (e: "resize-width", width: number): void;
 }>();
 
 const wrapperRef = ref<HTMLElement | null>(null);
@@ -28,6 +46,26 @@ const contentRef = ref<HTMLElement | null>(null);
 
 const wrapperWidth = ref(0);
 const contentWidth = ref(0);
+
+const getWordStyle = (word: LyricWord) => {
+  const currentTime = props.currentTime || 0;
+  const startTime = word.startTime;
+  const endTime = word.endTime;
+  const duration = Math.max(endTime - startTime, 0);
+
+  let p = 0;
+  if (currentTime >= endTime) {
+    p = 100;
+  } else if (currentTime <= startTime) {
+    p = 0;
+  } else {
+    p = duration > 0 ? ((currentTime - startTime) / duration) * 100 : 0;
+  }
+
+  return {
+    "--progress": `${p}%`,
+  } as CSSProperties;
+};
 
 const maxOffset = computed(() => {
   const diff = contentWidth.value - wrapperWidth.value;
@@ -62,7 +100,11 @@ const contentStyle = computed<CSSProperties>(() => {
 let resizeObserver: ResizeObserver | null = null;
 const updateMetrics = () => {
   if (wrapperRef.value) wrapperWidth.value = wrapperRef.value.clientWidth;
-  if (contentRef.value) contentWidth.value = contentRef.value.scrollWidth;
+  if (contentRef.value) {
+    const scrollWidth = contentRef.value.scrollWidth;
+    contentWidth.value = scrollWidth;
+    emit("resize-width", scrollWidth);
+  }
 };
 
 onMounted(() => {
@@ -107,5 +149,16 @@ watch(
   100% {
     transform: translateX(var(--target-offset));
   }
+}
+
+.word-item {
+  display: inline-block;
+  white-space: pre;
+  mask-image: linear-gradient(to right, black var(--progress), rgba(0, 0, 0, 0.7) var(--progress));
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black var(--progress),
+    rgba(0, 0, 0, 0.7) var(--progress)
+  );
 }
 </style>

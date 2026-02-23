@@ -51,8 +51,6 @@ interface ListState {
     /** 总大小 */
     totalSize: string;
   }>;
-  /** 音频源偏好 memory cache */
-  audioSourcePreference: Record<string, string>;
 }
 
 type UserDataKeys = keyof ListState["userLikeData"];
@@ -78,13 +76,6 @@ const backgroundDB = localforage.createInstance({
   storeName: "background",
 });
 
-// audioPrefDB
-const audioPrefDB = localforage.createInstance({
-  name: "music-data",
-  description: "Audio source preferences",
-  storeName: "audio_preferences",
-});
-
 export const useDataStore = defineStore("data", {
   state: (): ListState => ({
     // 播放列表
@@ -108,7 +99,6 @@ export const useDataStore = defineStore("data", {
       userId: 0,
       userType: 0,
       vipType: 0,
-
       name: "",
     },
     // 用户列表（多账号）
@@ -139,8 +129,6 @@ export const useDataStore = defineStore("data", {
     },
     // 正在下载的歌曲列表
     downloadingSongs: [],
-    // 音频源偏好
-    audioSourcePreference: {},
   }),
   getters: {
     // 是否为喜欢歌曲
@@ -181,6 +169,7 @@ export const useDataStore = defineStore("data", {
             }
           }),
         );
+
         // 获取 user-data
         const userDataKeys = await userDB.keys();
         await Promise.all(
@@ -539,46 +528,6 @@ export const useDataStore = defineStore("data", {
       } catch (error) {
         console.error("Error clearing background image:", error);
         throw error;
-      }
-    },
-    /**
-     * 获取音频源偏好
-     * @param id 歌曲ID
-     * @returns 音频源标识
-     */
-    async getAudioSourcePreference(id: number | string): Promise<string | null> {
-      // 优先从内存读取
-      const key = String(id);
-      if (this.audioSourcePreference[key]) {
-        return this.audioSourcePreference[key];
-      }
-      // 从 DB 读取并缓存到内存
-      try {
-        const val = await audioPrefDB.getItem<string>(key);
-        if (val) {
-          this.audioSourcePreference[key] = val;
-          return val;
-        }
-        return null;
-      } catch (error) {
-        console.error(`Error getting audio preference for ${id}:`, error);
-        return null;
-      }
-    },
-    /**
-     * 保存音频源偏好
-     * @param id 歌曲ID
-     * @param source 音频源标识
-     */
-    async setAudioSourcePreference(id: number | string, source: string): Promise<void> {
-      const key = String(id);
-      // 更新内存
-      this.audioSourcePreference[key] = source;
-      // 更新 DB
-      try {
-        await audioPrefDB.setItem(key, source);
-      } catch (error) {
-        console.error(`Error setting audio preference for ${id}:`, error);
       }
     },
   },

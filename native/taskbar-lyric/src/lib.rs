@@ -2,76 +2,30 @@ use std::{
     ffi::c_void,
     sync::{
         Arc,
-        atomic::{
-            AtomicBool,
-            Ordering,
-        },
-        mpsc::{
-            self,
-            Receiver,
-            Sender,
-        },
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
     },
-    thread::{
-        self,
-        JoinHandle,
-    },
+    thread::{self},
 };
 
 use napi::{
     bindgen_prelude::Buffer,
-    threadsafe_function::{
-        ThreadsafeFunction,
-        ThreadsafeFunctionCallMode,
-    },
+    threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode},
 };
 use napi_derive::napi;
-use strategy::{
-    LayoutParams,
-    LegacyStrategy,
-    TaskbarLayout,
-    TaskbarStrategy,
-    Win11Strategy,
-};
-use tracing::{
-    debug,
-    error,
-    info,
-    warn,
-};
-use utils::{
-    get_hwnd_from_buffer,
-    get_windows_build_number,
-};
+use strategy::{LayoutParams, LegacyStrategy, TaskbarLayout, TaskbarStrategy, Win11Strategy};
+use tracing::{debug, error, info, warn};
+use utils::{get_hwnd_from_buffer, get_windows_build_number};
 use windows::{
     Win32::{
-        Foundation::{
-            CloseHandle,
-            HANDLE,
-            HWND,
-            WAIT_OBJECT_0,
-        },
+        Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0},
         System::{
-            Com::{
-                COINIT_MULTITHREADED,
-                CoInitializeEx,
-                CoUninitialize,
-            },
+            Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize},
             Registry::{
-                HKEY,
-                HKEY_CURRENT_USER,
-                KEY_NOTIFY,
-                REG_NOTIFY_CHANGE_LAST_SET,
-                RegCloseKey,
-                RegNotifyChangeKeyValue,
-                RegOpenKeyExW,
+                HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET, RegCloseKey,
+                RegNotifyChangeKeyValue, RegOpenKeyExW,
             },
-            Threading::{
-                CreateEventW,
-                INFINITE,
-                SetEvent,
-                WaitForMultipleObjects,
-            },
+            Threading::{CreateEventW, INFINITE, SetEvent, WaitForMultipleObjects},
         },
     },
     core::w,
@@ -108,7 +62,6 @@ enum TaskbarCommand {
 #[napi]
 pub struct TaskbarService {
     sender: Sender<TaskbarCommand>,
-    thread_handle: Option<JoinHandle<()>>,
 }
 
 #[napi]
@@ -117,14 +70,11 @@ impl TaskbarService {
     pub fn new(callback: ThreadsafeFunction<TaskbarLayout>) -> napi::Result<Self> {
         let (tx, rx) = mpsc::channel();
 
-        let handle = thread::spawn(move || {
+        thread::spawn(move || {
             worker_loop(rx, callback);
         });
 
-        Ok(Self {
-            sender: tx,
-            thread_handle: Some(handle),
-        })
+        Ok(Self { sender: tx })
     }
 
     #[napi]
@@ -148,9 +98,6 @@ impl TaskbarService {
     #[napi]
     pub fn stop(&mut self) {
         let _ = self.sender.send(TaskbarCommand::Stop);
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
     }
 }
 
@@ -230,33 +177,52 @@ fn create_strategy() -> Option<Box<dyn TaskbarStrategy>> {
     let build_num = get_windows_build_number();
     debug!("Windows 版本号: {build_num}");
 
-    let mut strategy: Box<dyn TaskbarStrategy> = if build_num >= 22000 {
-        debug!("选择 Win11Strategy");
-        Box::new(Win11Strategy::new())
-    } else {
-        debug!("选择 LegacyStrategy");
-        Box::new(LegacyStrategy::new())
-    };
-
-    if strategy.init() {
-        Some(strategy)
-    } else {
-        warn!("初始化主要策略时失败，回退到 Win11Strategy");
-        let mut fallback = Box::new(Win11Strategy::new());
-        if fallback.init() {
-            info!("回退策略初始化成功");
-            Some(fallback)
+    let (mut primary, mut secondary): (Box<dyn TaskbarStrategy>, Box<dyn TaskbarStrategy>) =
+        if build_num >= 22000 {
+            (
+                Box::new(Win11Strategy::new()),
+                Box::new(LegacyStrategy::new()),
+            )
         } else {
-            error!("所有策略均初始化失败");
-            None
+            (
+                Box::new(LegacyStrategy::new()),
+                Box::new(Win11Strategy::new()),
+            )
+        };
+
+    if primary.init() {
+        debug!("首选策略初始化成功");
+        return Some(primary);
+    }
+
+    warn!("首选策略失效，尝试备选策略");
+    if secondary.init() {
+        debug!("备选策略初始化成功");
+        return Some(secondary);
+    }
+
+    error!("未检测到支持的任务栏结构");
+    None
+}
+
+/// 用于关闭句柄的 RAII 包装器
+struct EventHandle(HANDLE);
+
+impl Drop for EventHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.0);
         }
     }
 }
 
+// Safety: 跨线程访问句柄是安全的
+unsafe impl Send for EventHandle {}
+unsafe impl Sync for EventHandle {}
+
 #[napi]
 pub struct RegistryWatcher {
-    stop_event: usize,
-    thread_handle: Option<JoinHandle<()>>,
+    stop_event: Arc<EventHandle>,
     is_running: Arc<AtomicBool>,
 }
 
@@ -271,50 +237,39 @@ impl RegistryWatcher {
     /// 创建停止事件失败时抛出错误
     #[napi(constructor)]
     pub fn new(callback: ThreadsafeFunction<()>) -> napi::Result<Self> {
-        let stop_event = unsafe { CreateEventW(None, true, false, None) }
+        let raw_event = unsafe { CreateEventW(None, true, false, None) }
             .map_err(|e| napi::Error::from_reason(format!("创建停止事件失败: {e}")))?;
 
+        let stop_event = Arc::new(EventHandle(raw_event));
         let is_running = Arc::new(AtomicBool::new(true));
-        let stop_event_raw = stop_event.0 as usize;
+        let thread_event = stop_event.clone();
 
-        let handle = thread::spawn(move || unsafe {
-            Self::watch_loop(stop_event_raw, &callback);
+        thread::spawn(move || unsafe {
+            Self::watch_loop(&thread_event, &callback);
         });
 
         Ok(Self {
-            stop_event: stop_event_raw,
-            thread_handle: Some(handle),
+            stop_event,
             is_running,
         })
     }
 
     #[napi]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn stop(&mut self) -> napi::Result<()> {
+    pub fn stop(&mut self) {
         if !self.is_running.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        let event = HANDLE(self.stop_event as *mut _);
-        unsafe {
-            let _ = SetEvent(event);
-        }
-
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
+            return;
         }
 
         unsafe {
-            let _ = CloseHandle(event);
+            let _ = SetEvent(self.stop_event.0);
         }
 
         self.is_running.store(false, Ordering::SeqCst);
         info!("注册表监听已停止");
-        Ok(())
     }
 
-    unsafe fn watch_loop(stop_event_val: usize, callback: &ThreadsafeFunction<()>) {
-        let stop_event = HANDLE(stop_event_val as *mut _);
+    unsafe fn watch_loop(stop_event_wrapper: &Arc<EventHandle>, callback: &ThreadsafeFunction<()>) {
+        let stop_event = stop_event_wrapper.0;
 
         let mut h_key = HKEY::default();
         let sub_key = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced");
@@ -379,5 +334,11 @@ impl RegistryWatcher {
             let _ = CloseHandle(reg_event);
             let _ = RegCloseKey(h_key);
         }
+    }
+}
+
+impl Drop for RegistryWatcher {
+    fn drop(&mut self) {
+        self.stop();
     }
 }

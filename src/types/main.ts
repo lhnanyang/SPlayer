@@ -42,6 +42,16 @@ export enum QualityType {
   LQ = "LQ", // l: 128kbps
 }
 
+/** 音频源类型 */
+export type AudioSourceType =
+  | "official"
+  | "netease"
+  | "kuwo"
+  | "bodian"
+  | "gequbao"
+  | "local"
+  | "streaming";
+
 export type UserType = {
   id: number;
   name: string;
@@ -88,6 +98,8 @@ export type SongType = {
   pc?: boolean;
   /** 大小 */
   size?: number;
+  /** 曲目序号 */
+  trackNumber?: number;
   /** 音质 */
   quality?: QualityType;
   /** 创建时间 */
@@ -268,7 +280,6 @@ export interface UserDataType {
   userId: number;
   userType: number;
   vipType: number;
-  isSvip?: boolean;
   name: string;
   level?: number;
   avatarUrl?: string;
@@ -297,6 +308,8 @@ export type SortField =
   | "title"
   | "artist"
   | "album"
+  | "trackNumber"
+  | "filename"
   | "duration"
   | "size"
   | "createTime"

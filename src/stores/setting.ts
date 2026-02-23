@@ -5,6 +5,7 @@ import { defaultAMLLDbServer } from "@/utils/meta";
 import { defineStore } from "pinia";
 import { CURRENT_SETTING_SCHEMA_VERSION, settingMigrations } from "./migrations/settingMigrations";
 import { ThemeColorType } from "@/types/color";
+import type { LyricPriority } from "@/types/lyric";
 
 export interface SettingState {
   /** Schema 版本号 */
@@ -25,6 +26,8 @@ export interface SettingState {
   themeVariant: "primary" | "secondary" | "tertiary" | "neutral" | "neutralVariant" | "error";
   /** 主题跟随封面 */
   themeFollowCover: boolean;
+  /** 字体设置样式 */
+  fontSettingStyle: "single" | "multi" | "custom";
   /** 全局字体 */
   globalFont: "default" | string;
   /** 歌词区域字体 */
@@ -41,12 +44,40 @@ export interface SettingState {
   closeAppMethod: "exit" | "hide";
   /** 显示任务栏进度 */
   showTaskbarProgress: boolean;
+  /** 任务栏歌词显示封面 */
+  taskbarLyricShowCover: boolean;
+  /** 任务栏歌词最大宽度 */
+  taskbarLyricMaxWidth: number;
+  /** 任务栏歌词位置 */
+  taskbarLyricPosition: "automatic" | "left" | "right";
+  /** 任务栏歌词自动收缩 */
+  taskbarLyricAutoShrink: boolean;
+  /** 任务栏歌词边距 */
+  taskbarLyricMargin: number;
+  /** 任务栏歌词最小宽度 */
+  taskbarLyricMinWidth: number;
+  /** 暂停时显示任务栏歌词 */
+  taskbarLyricShowWhenPaused: boolean;
+  /** 任务栏歌词动画模式 */
+  taskbarLyricAnimationMode: "slide-blur" | "left-sm";
+  /** 任务栏歌词单行模式 */
+  taskbarLyricSingleLineMode: boolean;
+  /** 任务栏歌词逐字模式 */
+  taskbarLyricShowWordLyrics: boolean;
+  /** 任务栏歌词跟随主题色 */
+  taskbarLyricUseThemeColor: boolean;
+  /** 任务栏歌词字重 */
+  taskbarLyricFontWeight: number;
   /** 是否使用在线服务 */
   useOnlineService: boolean;
+  /** 分享链接格式 */
+  shareUrlFormat: "web" | "mobile";
   /** 启动时检查更新 */
   checkUpdateOnStart: boolean;
   /** 隐藏 VIP 标签 */
   hideVipTag: boolean;
+  /** 歌词字体大小模式 */
+  lyricFontSizeMode: "fixed" | "adaptive";
   /** 歌词字体大小 */
   lyricFontSize: number;
   /** 歌词翻译字体大小 */
@@ -56,7 +87,7 @@ export interface SettingState {
   /** 歌词字重设置 */
   lyricFontWeight: number;
   /** 显示逐字歌词 */
-  showYrc: boolean;
+  showWordLyrics: boolean;
   /** 显示歌词翻译 */
   showTran: boolean;
   /** 显示歌词音译 */
@@ -65,6 +96,8 @@ export interface SettingState {
   swapTranRoma: boolean;
   /** 显示逐字音译 */
   showWordsRoma: boolean;
+  /** 歌词动画 */
+  lyricTransition: "slide" | "fade";
   /** 歌词位置 */
   lyricsPosition: "flex-start" | "center" | "flex-end";
   /** 歌词滚动位置偏移量 */
@@ -77,12 +110,15 @@ export interface SettingState {
   hideBracketedContent: boolean;
   /** 替换歌词括号内容 */
   replaceLyricBrackets: boolean;
+  uncensorMaskedProfanity: boolean;
   /** 歌词括号替换预设 */
   bracketReplacementPreset: "dash" | "angleBrackets" | "cornerBrackets" | "custom";
   /** 自定义歌词括号替换内容 */
   customBracketReplacement: string;
   /** 下载路径 */
   downloadPath: string;
+  /** 下载线程数 */
+  downloadThreadCount: number;
   /** 是否启用缓存 */
   cacheEnabled: boolean;
   /** 是否缓存歌曲（音频文件） */
@@ -115,6 +151,8 @@ export interface SettingState {
   downloadLyricToTraditional: boolean;
   /** 下载歌词文件编码 */
   downloadLyricEncoding: "utf-8" | "gbk" | "utf-16" | "iso-8859-1";
+  /** 启用HTTP2下载 */
+  enableDownloadHttp2: boolean;
   /** 默认下载音质（弹窗默认选项） */
   downloadSongLevel: SongLevelType;
   /** 代理协议 */
@@ -205,9 +243,12 @@ export interface SettingState {
   lyricOffsetStep: number;
   /** 启用在线 TTML 歌词 */
   enableOnlineTTMLLyric: boolean;
-  /** 优先使用 QQ 音乐歌词源 */
-  preferQQMusicLyric: boolean;
-  /** 本地歌曲使用 QQ 音乐歌词匹配 */
+  /** 启用 QM 歌词 */
+  enableQQMusicLyric: boolean;
+  /** 歌词源优先级 */
+  /** 歌词源优先级 */
+  lyricPriority: LyricPriority;
+  /** 本地歌曲使用 QM 歌词匹配 */
   localLyricQQMusicMatch: boolean;
   /** AMLL DB 服务地址 */
   amllDbServer: string;
@@ -247,6 +288,8 @@ export interface SettingState {
     artistDetail: boolean;
     /** 播客电台 */
     radio: boolean;
+    /** 专辑 */
+    album: boolean;
     /** 我的收藏 */
     like: boolean;
     /** 视频 */
@@ -374,11 +417,13 @@ export interface SettingState {
     wiki: boolean;
     search: boolean;
     download: boolean;
+    copyName: boolean;
+    musicTagEditor: boolean;
   };
   /** 启用搜索关键词获取 */
   enableSearchKeyword: boolean;
-  /** 失焦后自动清空搜索框 */
-  clearSearchOnBlur: boolean;
+  /** 搜索框行为 */
+  searchInputBehavior: "normal" | "clear" | "sync";
   /** 显示主页问好 */
   showHomeGreeting: boolean;
   /** 首页栏目顺序和显示配置 */
@@ -408,8 +453,6 @@ export interface SettingState {
   playerFollowCoverColor: boolean;
   /** 进度条悬浮时显示歌词 */
   progressLyricShow: boolean;
-  /** 是否使用自定义字体输入 */
-  useCustomFont: boolean;
   /** Discord RPC 配置 */
   discordRpc: {
     /** 是否启用 Discord RPC */
@@ -435,6 +478,20 @@ export interface SettingState {
   disableAiAudio: boolean;
   /** Fuck DJ: 开启后自动跳过 DJ 歌曲 */
   disableDjMode: boolean;
+  /** 启用自动混音 */
+  enableAutomix: boolean;
+  /** 自动混音最大分析时间 (秒) */
+  automixMaxAnalyzeTime: number;
+  /** 启用全局错误弹窗 */
+  enableGlobalErrorDialog: boolean;
+  /** macOS 专属设置 */
+  macos: {
+    /** 状态栏歌词 */
+    statusBarLyric: {
+      /** 是否启用 */
+      enabled: boolean;
+    };
+  };
 }
 
 export const useSettingStore = defineStore("setting", {
@@ -448,6 +505,7 @@ export const useSettingStore = defineStore("setting", {
     themeFollowCover: false,
     themeGlobalColor: false,
     themeVariant: "secondary",
+    fontSettingStyle: "single",
     globalFont: "default",
     LyricFont: "follow",
     japaneseLyricFont: "follow",
@@ -460,9 +518,22 @@ export const useSettingStore = defineStore("setting", {
     routeAnimation: "slide",
     playerExpandAnimation: "up",
     useOnlineService: true,
+    shareUrlFormat: "web",
     showCloseAppTip: true,
     closeAppMethod: "hide",
     showTaskbarProgress: false,
+    taskbarLyricShowCover: true,
+    taskbarLyricMaxWidth: 30,
+    taskbarLyricPosition: "automatic",
+    taskbarLyricAutoShrink: false,
+    taskbarLyricMargin: 10,
+    taskbarLyricMinWidth: 10,
+    taskbarLyricShowWhenPaused: true,
+    taskbarLyricAnimationMode: "slide-blur",
+    taskbarLyricSingleLineMode: false,
+    taskbarLyricShowWordLyrics: true,
+    taskbarLyricUseThemeColor: false,
+    taskbarLyricFontWeight: 400,
     checkUpdateOnStart: true,
     preventSleep: false,
     useKeepAlive: true,
@@ -502,6 +573,7 @@ export const useSettingStore = defineStore("setting", {
     playSongDemo: false,
     scrobbleSong: false,
     dynamicCover: false,
+    lyricFontSizeMode: "adaptive",
     lyricFontSize: 46,
     lyricTranFontSize: 22,
     lyricRomaFontSize: 18,
@@ -512,14 +584,16 @@ export const useSettingStore = defineStore("setting", {
     wordFadeWidth: 0.5,
     lyricOffsetStep: 500,
     enableOnlineTTMLLyric: false,
-    preferQQMusicLyric: false,
+    enableQQMusicLyric: false,
+    lyricPriority: "auto",
     localLyricQQMusicMatch: false,
     amllDbServer: defaultAMLLDbServer,
-    showYrc: true,
+    showWordLyrics: true,
     showTran: true,
     showRoma: true,
     swapTranRoma: false,
     showWordsRoma: true,
+    lyricTransition: "slide",
     lyricsPosition: "flex-start",
     lyricsBlur: false,
     lyricsScrollOffset: 0.25,
@@ -527,6 +601,7 @@ export const useSettingStore = defineStore("setting", {
     lyricAlignRight: false,
     hideBracketedContent: false,
     replaceLyricBrackets: false,
+    uncensorMaskedProfanity: false,
     bracketReplacementPreset: "dash",
     customBracketReplacement: "-",
     enableExcludeLyrics: true,
@@ -554,6 +629,7 @@ export const useSettingStore = defineStore("setting", {
       personalFM: false,
       artistDetail: false,
       radio: false,
+      album: false,
       like: false,
       video: false,
       videoDetail: false,
@@ -561,6 +637,7 @@ export const useSettingStore = defineStore("setting", {
     hideAllCovers: false,
     hideMiniPlayerCover: false,
     downloadPath: "",
+    downloadThreadCount: 8,
     cacheEnabled: true,
     songCacheEnabled: true,
     fileNameFormat: "title-artist",
@@ -576,6 +653,7 @@ export const useSettingStore = defineStore("setting", {
     downloadSaveAsAss: false,
     downloadLyricToTraditional: false,
     downloadLyricEncoding: "utf-8",
+    enableDownloadHttp2: true,
     saveMetaFile: false,
     downloadSongLevel: "h",
     proxyProtocol: "off",
@@ -639,9 +717,11 @@ export const useSettingStore = defineStore("setting", {
       wiki: true,
       search: true,
       download: true,
+      copyName: true,
+      musicTagEditor: true,
     },
     enableSearchKeyword: true,
-    clearSearchOnBlur: false,
+    searchInputBehavior: "normal",
     showHomeGreeting: true,
     homePageSections: [
       { key: "playlist", name: "专属歌单", visible: true, order: 0 },
@@ -666,7 +746,6 @@ export const useSettingStore = defineStore("setting", {
     },
     playerFollowCoverColor: true,
     progressLyricShow: true,
-    useCustomFont: false,
     discordRpc: {
       enabled: false,
       showWhenPaused: true,
@@ -680,6 +759,14 @@ export const useSettingStore = defineStore("setting", {
     streamingEnabled: false,
     disableAiAudio: false,
     disableDjMode: false,
+    enableAutomix: false,
+    automixMaxAnalyzeTime: 60,
+    enableGlobalErrorDialog: true,
+    macos: {
+      statusBarLyric: {
+        enabled: false,
+      },
+    },
   }),
   getters: {
     /**

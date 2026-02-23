@@ -8,7 +8,7 @@ import { AI_AUDIO_LEVELS } from "@/utils/meta";
 import { openSongUnlockManager } from "@/utils/modal";
 import { NTooltip, SelectOption } from "naive-ui";
 import { uniqBy } from "lodash-es";
-import { filterAuthorizedQualityOptions } from "@/utils/auth";
+
 import { computed, ref, h, watch } from "vue";
 
 export const usePlaySettings = (): SettingConfig => {
@@ -136,6 +136,10 @@ export const usePlaySettings = (): SettingConfig => {
       positiveText: "重启",
       negativeText: "取消",
       onPositiveClick: () => {
+        // 切换引擎类型时重置为目标引擎的默认设备，避免跨引擎设备 ID 不兼容
+        if (targetPlaybackEngine !== settingStore.playbackEngine) {
+          settingStore.playDevice = targetPlaybackEngine === "mpv" ? "auto" : "default";
+        }
         settingStore.playbackEngine = targetPlaybackEngine;
         settingStore.audioEngine = targetAudioEngine;
         if (isElectron) {
@@ -165,8 +169,14 @@ export const usePlaySettings = (): SettingConfig => {
             }),
           );
 
-          // 初始化选中为当前 mpv 设备
-          if (!settingStore.playDevice || settingStore.playDevice === "default") {
+          // 验证已保存的设备是否在当前设备列表中
+          const deviceIds = result.devices.map((d: { id: string }) => d.id);
+          const savedValid =
+            settingStore.playDevice &&
+            settingStore.playDevice !== "default" &&
+            deviceIds.includes(settingStore.playDevice);
+
+          if (!savedValid) {
             const current = await window.electron.ipcRenderer.invoke(
               "mpv-get-current-audio-device",
             );
@@ -179,7 +189,7 @@ export const usePlaySettings = (): SettingConfig => {
         }
       } catch (e) {
         console.error("获取 MPV 音频设备失败:", e);
-        if (!settingStore.playDevice || settingStore.playDevice === "default") {
+        if (!settingStore.playDevice) {
           settingStore.playDevice = "auto";
         }
       }
@@ -198,12 +208,20 @@ export const usePlaySettings = (): SettingConfig => {
         label: device.label,
         value: device.deviceId,
       }));
+
+      // 验证已保存的设备是否在当前设备列表中
+      if (
+        settingStore.playDevice &&
+        !outputData.some((d) => d.deviceId === settingStore.playDevice)
+      ) {
+        settingStore.playDevice = "default";
+      }
     } catch (e) {
       console.error("获取 WebAudio 设备失败", e);
     }
   };
 
-  // mpv 切换输出设备
+  // 切换输出设备
   const playDeviceChange = async (deviceId: string) => {
     // 找到对应的 label 用于显示
     const option = outputDevices.value.find((d) => d.value === deviceId);
@@ -213,6 +231,7 @@ export const usePlaySettings = (): SettingConfig => {
       try {
         const result = await window.electron.ipcRenderer.invoke("mpv-set-audio-device", deviceId);
         if (result.success) {
+          settingStore.playDevice = deviceId;
           window.$message.success(`已切换输出设备为 ${label}`);
         } else {
           window.$message.error(`切换输出设备失败: ${result.error}`);
@@ -223,8 +242,13 @@ export const usePlaySettings = (): SettingConfig => {
       return;
     }
 
-    player.toggleOutputDevice(deviceId);
-    window.$message.success(`已切换输出设备为 ${label}`);
+    try {
+      await player.toggleOutputDevice(deviceId);
+      settingStore.playDevice = deviceId;
+      window.$message.success(`已切换输出设备为 ${label}`);
+    } catch (e) {
+      window.$message.error(`切换输出设备失败: ${e}`);
+    }
   };
   // 监听播放引擎变化以刷新设备列表
   watch(
@@ -274,10 +298,7 @@ export const usePlaySettings = (): SettingConfig => {
 
   // 动态计算音质选项
   const songLevelOptions = computed(() => {
-    let options = Object.values(songLevelData);
-
-    // 根据 VIP 状态过滤
-    options = filterAuthorizedQualityOptions(options, "value");
+    const options = Object.values(songLevelData);
 
     if (settingStore.disableAiAudio) {
       return options.filter((option) => {
@@ -403,6 +424,52 @@ export const usePlaySettings = (): SettingConfig => {
               },
             ],
           },
+          {
+            key: "enableAutomix",
+            label: "启用自动混音",
+            type: "switch",
+            tags: [{ text: "Beta", type: "warning" }],
+            description: computed(() =>
+              settingStore.playbackEngine === "web-audio"
+                ? "是否启用自动混音功能"
+                : "自动混音功能仅在使用 Web Audio 引擎时可用",
+            ),
+            value: computed({
+              get: () => settingStore.enableAutomix,
+              set: (v) => {
+                if (v) {
+                  window.$dialog.warning({
+                    title: "启用自动混音 (Beta)",
+                    content:
+                      "可能出现兼容性问题，该功能在早期测试，遇到问题请反馈issue，不保证可以及时处理。效果可能因为歌曲而异，保守策略。",
+                    positiveText: "开启",
+                    negativeText: "取消",
+                    onPositiveClick: () => {
+                      settingStore.enableAutomix = true;
+                    },
+                  });
+                } else {
+                  settingStore.enableAutomix = v;
+                }
+              },
+            }),
+            disabled: computed(() => settingStore.playbackEngine !== "web-audio"),
+            children: [
+              {
+                key: "automixMaxAnalyzeTime",
+                label: "最大分析时间",
+                type: "input-number",
+                description: "单位秒，越长越精准但更耗时 (建议 60s)",
+                min: 5,
+                max: 300,
+                suffix: "s",
+                value: computed({
+                  get: () => settingStore.automixMaxAnalyzeTime,
+                  set: (v) => (settingStore.automixMaxAnalyzeTime = v),
+                }),
+              },
+            ],
+          },
         ],
       },
       {
@@ -441,6 +508,16 @@ export const usePlaySettings = (): SettingConfig => {
             value: computed({
               get: () => settingStore.disableDjMode,
               set: (v) => (settingStore.disableDjMode = v),
+            }),
+          },
+          {
+            key: "uncensorMaskedProfanity",
+            label: "Fuck *** Mode",
+            type: "switch",
+            description: "把歌词里的 f**k 等屏蔽词还原为原词",
+            value: computed({
+              get: () => settingStore.uncensorMaskedProfanity,
+              set: (v) => (settingStore.uncensorMaskedProfanity = v),
             }),
           },
           {
@@ -487,7 +564,7 @@ export const usePlaySettings = (): SettingConfig => {
               return () => {
                 if (settingStore.audioEngine === "ffmpeg") return "FFmpeg 引擎不支持切换输出设备";
                 if (settingStore.playbackEngine === "mpv")
-                  return '如不知怎么选择，请选择"Autoselect"或者"Default"设备，选错可能导致无声，或处于锁死状态，重新选择"Autoselect"后切歌即可解决';
+                  return '如不知怎么选择，请选择 "Autoselect" 或者 "Default" 设备，选错可能导致无声，或处于锁死状态，重新选择 "Autoselect" 后切歌即可解决';
                 return "新增或移除音频设备后请重新打开设置";
               };
             })(),
@@ -507,7 +584,8 @@ export const usePlaySettings = (): SettingConfig => {
             key: "enableReplayGain",
             label: "音量平衡",
             type: "switch",
-            description: "平衡不同音频内容之间的音量大小（需要本地歌曲标签中有 replayGain 数据才会生效）",
+            description:
+              "平衡不同音频内容之间的音量大小（需要本地歌曲标签中有 replayGain 数据才会生效）",
             value: computed({
               get: () => settingStore.enableReplayGain,
               set: (v) => (settingStore.enableReplayGain = v),
